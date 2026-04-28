@@ -1,0 +1,27 @@
+.home-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.home-layout__map {
+  flex: 1;
+  position: relative;
+}
+
+.home-layout__sidebar {
+  width: 360px;
+  height: 100%;
+  overflow-y: auto;
+  padding: 1.25rem;
+  border-left: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.home-layout__trips-heading {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
