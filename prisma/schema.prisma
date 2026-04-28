@@ -1,0 +1,47 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  trips     Trip[]
+  createdAt DateTime @default(now())
+}
+
+model Trip {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  destination String
+  days        Day[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Day {
+  id        String          @id @default(cuid())
+  tripId    String
+  trip      Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  dayNumber Int
+  summary   String?
+  locations LocationPoint[]
+}
+
+model LocationPoint {
+  id         String  @id @default(cuid())
+  dayId      String
+  day        Day     @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  lat        Float
+  lng        Float
+  orderIndex Int
+  name       String
+  notes      String?
+}
