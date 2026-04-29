@@ -6,7 +6,7 @@ import Map, { Marker, Source, Layer, NavigationControl, Popup } from 'react-map-
 import type { MapRef } from 'react-map-gl/mapbox'
 import type { MapMouseEvent } from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom } from '@/lib/store'
+import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom } from '@/lib/store'
 import { addLocationPoint } from '@/app/actions/addLocationPoint'
 import type { TripWithDaysAndLocations, ActionState } from '@/types'
 
@@ -90,6 +90,7 @@ export function MapView({ trips }: MapViewProps) {
   const selectedTrip = useAtomValue(selectedTripAtom)
   const selectedDayId = useAtomValue(selectedDayIdAtom)
   const [suggestedLocation, setSuggestedLocation] = useAtom(suggestedLocationAtom)
+  const [focusedLocation, setFocusedLocation] = useAtom(focusedLocationAtom)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -101,6 +102,12 @@ export function MapView({ trips }: MapViewProps) {
   }, [selectedTrip?.id, mounted]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { setPendingPoint(null) }, [selectedDayId])
+
+  useEffect(() => {
+    if (!focusedLocation || !mounted) return
+    mapRef.current?.flyTo({ center: [focusedLocation.lng, focusedLocation.lat], zoom: 15, duration: 1000 })
+    setFocusedLocation(null)
+  }, [focusedLocation, mounted]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!suggestedLocation || !mounted) return

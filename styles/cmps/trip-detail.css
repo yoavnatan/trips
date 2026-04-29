@@ -74,8 +74,13 @@
   border-color: #2563eb;
 }
 
+.day-list__header-row {
+  display: flex;
+  align-items: center;
+}
+
 .day-list__header {
-  width: 100%;
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -84,6 +89,26 @@
   border: none;
   cursor: pointer;
   text-align: left;
+}
+
+.day-list__delete-day {
+  padding: 0.25rem 0.625rem;
+  background: none;
+  border: none;
+  font-size: 1.125rem;
+  line-height: 1;
+  color: #d1d5db;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.day-list__delete-day:hover {
+  color: #dc2626;
+}
+
+.day-list__delete-day:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .day-list__item--active .day-list__header {
@@ -151,36 +176,79 @@
   flex-direction: column;
 }
 
+.location-list__row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.location-list__drag-handle {
+  color: #d1d5db;
+  font-size: 1rem;
+  cursor: grab;
+  padding: 0 0.25rem;
+  flex-shrink: 0;
+  touch-action: none;
+  user-select: none;
+}
+
+.location-list__drag-handle:hover {
+  color: #9ca3af;
+}
+
+.location-list__drag-handle:active {
+  cursor: grabbing;
+}
+
 .location-list__name {
   font-size: 0.8125rem;
   color: #111827;
-  padding: 0.25rem 0;
-  padding-left: 1.25rem;
-  position: relative;
+  padding: 0.25rem 0.25rem;
+  flex: 1;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
 }
 
-.location-list__name::before {
-  content: counter(list-item) '.';
-  position: absolute;
-  left: 0;
+.location-list__name:hover {
   color: #2563eb;
-  font-weight: 600;
-  font-size: 0.75rem;
+  text-decoration: underline;
 }
 
-.location-list {
-  counter-reset: list-item;
+.location-list__delete {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  line-height: 1;
+  color: #d1d5db;
+  cursor: pointer;
+  padding: 0.125rem 0.25rem;
+  flex-shrink: 0;
 }
 
-.location-list__item {
-  counter-increment: list-item;
+.location-list__delete:hover {
+  color: #dc2626;
 }
+
+.location-list__delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 
 .location-list__dist {
   font-size: 0.6875rem;
   color: #9ca3af;
   padding-left: 1.25rem;
   padding-bottom: 0.25rem;
+}
+
+.location-list__error {
+  font-size: 0.75rem;
+  color: #dc2626;
+  margin-top: 0.25rem;
 }
 
 /* Suggest next */

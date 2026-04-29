@@ -3,6 +3,7 @@
 import { z } from 'zod'
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
+import { auth } from '@/lib/auth'
 import type { ActionState } from '@/types'
 
 const schema = z.object({
@@ -10,13 +11,13 @@ const schema = z.object({
   destination: z.string().min(1, 'Destination is required'),
 })
 
-// TODO: replace with real userId from session when auth is added
-const DEV_USER_ID = 'dev-user'
-
 export async function createTrip(
   prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const session = await auth()
+  if (!session?.user?.id) return { error: 'Not authenticated' }
+
   const result = schema.safeParse({
     title: formData.get('title'),
     destination: formData.get('destination'),
@@ -27,13 +28,8 @@ export async function createTrip(
   }
 
   try {
-    await prisma.user.upsert({
-      where: { id: DEV_USER_ID },
-      update: {},
-      create: { id: DEV_USER_ID, email: 'dev@local', name: 'Dev User' },
-    })
     await prisma.trip.create({
-      data: { ...result.data, userId: DEV_USER_ID },
+      data: { ...result.data, userId: session.user.id },
     })
   } catch (e) {
     console.error(e)
