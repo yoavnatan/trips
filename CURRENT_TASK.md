@@ -1,24 +1,21 @@
-## Now
+## User notes
 
-[V] npm run dev — page loads (200 OK) at http://localhost:3001
+-make the locations every day become a list, 
+put a distance between each one, and summary of distance between all.
+every day can be open up in an accordion. 
 
-[V] Open http://localhost:3001 and verify:
-    - Map renders (Mapbox)
-    - "New Trip" form shows in sidebar
-    - Trip list shows "No trips yet"
+-suggest next location in the list, if clicked, pin it on the map.
 
-[V] Create a test trip via the form and confirm it appears in the list
+-allayws read claude.md before work.
 
-[] Please create Atoms git commits and push it, because I didn't to it.
 
-## Next
+## Claude notes
 
-- Add days to a trip
-- Add location points on the map
+Done:
+- Each day is now an accordion: click to expand/collapse
+- Expanded day shows ordered location list with distance between each stop and total distance in the header badge
+- "Suggest next location" button appears when a day has locations — fetches nearby POIs from Mapbox and lists them
+- Clicking a suggestion flies the map to that spot and opens the add-location popup pre-filled with the name
+- Created lib/utils.ts with haversineDistance + formatDistance
+- Added suggestedLocationAtom to lib/store.ts for sidebar ↔ map communication
 
-## Notes
-
-- SSL warning from pg is harmless — no action needed
-- DB: Neon PostgreSQL (eu-central-1)
-- DEV_USER_ID in app/actions/createTrip.ts is a placeholder until auth is added
-- Mapbox token is in .env.local

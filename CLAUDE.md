@@ -5,11 +5,12 @@ A trip planning application with interactive maps.
 Users can create trips, divide them into days, and mark location points on a map with connected route lines.
 
 ## Tech Stack
-- Next.js 14 (App Router)
+- Next.js 16 (App Router)
 - TypeScript (strict mode)
-- CSS Modules with organized imports (no Tailwind)
-- PostgreSQL + Prisma ORM
-- React Leaflet (for maps)
+- Plain CSS with organized imports (no Tailwind)
+- PostgreSQL (Neon) + Prisma 7 ORM + @prisma/adapter-pg
+- Mapbox (react-map-gl v8)
+- Jotai v2 (client state)
 
 ## Database Schema
 
@@ -179,24 +180,28 @@ schema.prisma     - Database schema
 ## Current Status
 
 ### Completed
-- [ ] Next.js project initialized
-- [ ] Prisma installed and configured
-- [ ] Database schema defined
-- [ ] Folder structure created
-- [ ] CSS organization set up
+- [x] Next.js project initialized
+- [x] Prisma installed, schema defined, migration run
+- [x] Neon PostgreSQL connected
+- [x] Folder structure created
+- [x] CSS organization set up (setup/, basics/, cmps/)
+- [x] Jotai state management wired up
+- [x] Main page: Mapbox map + trip creation form + trip list
 
-### In Progress
-- [ ] PostgreSQL connection
-- [ ] First Prisma migration
+### Next
+- Add days to a trip
+- Add location points per day on the map
 
-### Next Steps
-1. Set up PostgreSQL database (Supabase/Neon)
-2. Run first migration
-3. Create basic layout and navigation
-4. Build trip creation form
-5. Integrate map component
+## CURRENT_TASK.md convention
 
-## Notes
-- Always read this file before starting work
-- Update "Current Status" after completing tasks
-- Add important decisions to "Notes" section
+The file uses two sections for discussion between user and Claude:
+
+```
+## User notes
+What you want to work on, questions, or tasks for Claude.
+
+## Claude notes
+Claude's response — status, suggestions, things you need to know.
+```
+
+Claude reads this at the start of every session. Update "User notes" with what you want next; Claude updates "Claude notes" with status and suggestions.

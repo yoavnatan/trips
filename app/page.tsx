@@ -1,13 +1,20 @@
 import { prisma } from '@/lib/db'
-import { TripForm } from '@/components/ui/TripForm'
-import { TripList } from '@/components/trip/TripList'
 import { MapView } from '@/components/map/MapView'
-import type { Trip } from '@/types'
+import { Sidebar } from '@/components/trip/Sidebar'
+import type { TripWithDaysAndLocations } from '@/types'
 
 export default async function HomePage() {
-  let trips: Trip[] = []
+  let trips: TripWithDaysAndLocations[] = []
   try {
-    trips = await prisma.trip.findMany({ orderBy: { createdAt: 'desc' } })
+    trips = await prisma.trip.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        days: {
+          orderBy: { dayNumber: 'asc' },
+          include: { locations: { orderBy: { orderIndex: 'asc' } } },
+        },
+      },
+    })
   } catch {
     // DB not yet connected
   }
@@ -15,15 +22,9 @@ export default async function HomePage() {
   return (
     <main className="home-layout">
       <div className="home-layout__map">
-        <MapView />
+        <MapView trips={trips} />
       </div>
-      <aside className="home-layout__sidebar">
-        <TripForm />
-        <section className="home-layout__trips">
-          <h2 className="home-layout__trips-heading">Your Trips</h2>
-          <TripList trips={trips} />
-        </section>
-      </aside>
+      <Sidebar trips={trips} />
     </main>
   )
 }

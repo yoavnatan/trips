@@ -1,4 +1,123 @@
 .map-view {
   width: 100%;
   height: 100%;
+  position: relative;
+}
+
+.map-view__hint {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.8125rem;
+  padding: 0.375rem 0.875rem;
+  border-radius: 999px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Markers */
+
+.map-marker {
+  width: 28px;
+  height: 28px;
+  background-color: #2563eb;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  cursor: default;
+}
+
+.map-marker__number {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+
+/* Add-point popup form */
+
+.add-point-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 200px;
+  padding: 0.25rem 0;
+}
+
+.add-point-form__loading {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.add-point-form__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.add-point-form__chip {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #f9fafb;
+  cursor: pointer;
+  white-space: nowrap;
+  color: #374151;
+}
+
+.add-point-form__chip:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.add-point-form__chip--active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+  font-weight: 500;
+}
+
+.add-point-form__input {
+  padding: 0.375rem 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  width: 100%;
+}
+
+.add-point-form__input:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+.add-point-form__error {
+  font-size: 0.75rem;
+  color: #dc2626;
+}
+
+.add-point-form__submit {
+  padding: 0.375rem 0.75rem;
+  background-color: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.add-point-form__submit:hover {
+  background-color: #1d4ed8;
+}
+
+.add-point-form__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
