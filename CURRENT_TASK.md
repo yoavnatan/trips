@@ -15,6 +15,7 @@ Right now locations are ordered by orderIndex (insert order). Drag-to-reorder or
 3. Authentication
 Everything runs under a hardcoded DEV_USER_ID. If you want to actually use this app or share it, you need real login. NextAuth.js with Google OAuth is the fastest path — maybe 2-3 hours of work.
 make it possible to make auth with google! 
+(Done, google is not working for now)
 
 4. Notes on locations
 The schema already has a notes field on LocationPoint. Tapping a marker could open a detail panel to read/edit notes and rename the location.

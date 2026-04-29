@@ -1,6 +1,7 @@
 'use client'
 
 import { Provider } from 'jotai'
+import { SessionProvider } from 'next-auth/react'
 import type { ReactNode } from 'react'
 
 interface ProvidersProps {
@@ -8,5 +9,9 @@ interface ProvidersProps {
 }
 
 export function Providers({ children }: ProvidersProps) {
-  return <Provider>{children}</Provider>
+  return (
+    <SessionProvider>
+      <Provider>{children}</Provider>
+    </SessionProvider>
+  )
 }

@@ -1,0 +1,133 @@
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: overlay-in 0.15s ease;
+}
+
+.auth-modal {
+  background: #fff;
+  border-radius: 0.875rem;
+  width: min(420px, 92vw);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  animation: modal-in 0.15s ease;
+}
+
+.auth-modal__tabs {
+  display: flex;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.auth-modal__tab {
+  flex: 1;
+  padding: 1rem;
+  background: none;
+  border: none;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #9ca3af;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s;
+}
+
+.auth-modal__tab--active {
+  color: #111827;
+  border-bottom-color: #2563eb;
+}
+
+.auth-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.5rem;
+}
+
+.auth-modal__row {
+  display: flex;
+  gap: 0.625rem;
+}
+
+.auth-modal__input {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  background: #fff;
+  transition: border-color 0.15s;
+}
+
+.auth-modal__input:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+.auth-modal__error {
+  font-size: 0.8125rem;
+  color: #dc2626;
+}
+
+.auth-modal__submit {
+  padding: 0.6875rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.auth-modal__submit:hover {
+  background: #1d4ed8;
+}
+
+.auth-modal__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-modal__divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #9ca3af;
+  font-size: 0.8125rem;
+}
+
+.auth-modal__divider::before,
+.auth-modal__divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e5e7eb;
+}
+
+.auth-modal__google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  padding: 0.6875rem;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.auth-modal__google:hover {
+  border-color: #9ca3af;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}

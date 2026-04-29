@@ -15,6 +15,7 @@
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@types/pg": "^8.20.0",
+    "bcryptjs": "^3.0.3",
     "jotai": "^2.19.1",
     "mapbox-gl": "^3.22.0",
     "next": "16.2.4",
@@ -27,6 +28,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

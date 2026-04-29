@@ -58,6 +58,40 @@
   flex-shrink: 0;
 }
 
+/* Sidebar guest strip */
+
+.sidebar-guest {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.sidebar-guest__text {
+  font-size: 0.8125rem;
+  color: #6b7280;
+  flex: 1;
+}
+
+.sidebar-guest__btn {
+  padding: 0.375rem 0.875rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sidebar-guest__btn:hover {
+  background: #1d4ed8;
+}
+
 /* Sidebar user strip */
 
 .sidebar-user {
