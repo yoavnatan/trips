@@ -1,20 +1,16 @@
 ## User notes
 
-read claude.md always before starting
+read claude.md always before starting.
+save usage in terms of claude tokens.
+don't waste all the tokens in 30 minutes!
 
-I want to implement a multi-modal routing feature on the current map using Next.js and Mapbox. Please perform the following:
+current : 
+we are now working on the route methods from locations. (multi-modal routing)
+1. improve the transopration method like that:
+the user can click on the distance itself between two locations on the list and get the route and the options to change the method. the distance would be computed depends on the route method. the distance should reflect the actual distance the user would pass, not the "air distance". 
+2. I don't like the idea it automaitaclly choose busses, most of the people like to divereify the way they use transoprtaoin, with metros, busses etc. it should be intuitive to move from optiions, think like a lost tourist. someone who want to have all the options infront of him before he travels. 
 
-Core Routing: Implement a navigation system that allows users to set a start and end point and visualize the route on the map.
-
-Mapbox Integration: Use the Mapbox Directions API to handle driving, walking, and cycling profiles.
-
-Public Transit Handling: Since Mapbox doesn't support transit natively, create a clean boilerplate function to fetch public transport data from an external API (e.g., Google Routes or Navitia) and render it as a GeoJSON layer on the Mapbox map.
-
-UI/UX: Add a sleek, mobile-responsive selection menu to toggle between transport modes. Ensure the design follows the current app's aesthetic.
-
-Environment Variables: Use the existing Mapbox Access Token from my .env.local file.
-
-Safety: Do not overwrite existing map logic; integrate this as a modular feature/component.
+next: I want the day title marked with a difficulty level, if the avarage person can make the route with peace it would be a moderate level, if it's hard- hard, if it's an easy day it would be easy peasy. 
 
 
 ## Claude notes
@@ -22,13 +18,6 @@ Safety: Do not overwrite existing map logic; integrate this as a modular feature
 ### סטטוס — הכל עובד בפרודקשן
 https://trips-8sq6.vercel.app
 
-### שינויים אחרונים שלא נדחפו עדיין לgit
-- MapView: לחיצה על מיקום ברשימה → flyTo zoom 14 על המיקום עצמו
-- MapView: בחירת יום → fitBounds לכל המיקומים של אותו יום
-- MapView: לחיצה על מפה בלי יום → reverse geocode לרמת עיר/מדינה
-- TripForm: destination controlled + debounced autocomplete (Mapbox geocoding)
-- TripList: empty state עם 3 שלבים
-- הינטים ב-TripDetail ו-Sidebar שופרו
 
 ### להמשך (לפי עדיפות)
 1. **Multi-modal routing** — routes אמיתיות על כבישים (Mapbox Directions API) + toggle נהיגה/הליכה/אופניים

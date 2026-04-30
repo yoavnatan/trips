@@ -7,12 +7,19 @@ import Map, { Marker, Source, Layer, NavigationControl, Popup } from 'react-map-
 import type { MapRef } from 'react-map-gl/mapbox'
 import type { MapMouseEvent } from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, mapClickedDestinationAtom } from '@/lib/store'
+import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, mapClickedDestinationAtom, routeModeAtom, dayRouteGeoJSONAtom } from '@/lib/store'
 import { addLocationPoint } from '@/app/actions/addLocationPoint'
 import { updateLocation } from '@/app/actions/updateLocation'
-import type { TripWithDaysAndLocations, ActionState, LocationPoint } from '@/types'
+import type { TripWithDaysAndLocations, ActionState, LocationPoint, TransportMode } from '@/types'
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
+
+const ROUTE_COLORS: Record<TransportMode, string> = {
+  driving: '#ef4444',
+  walking: '#22c55e',
+  cycling: '#f59e0b',
+  transit: '#8b5cf6',
+}
 
 type RenderedFeature = {
   layer: { id: string }
@@ -132,6 +139,8 @@ export function MapView({ trips }: MapViewProps) {
   const [suggestedLocation, setSuggestedLocation] = useAtom(suggestedLocationAtom)
   const [focusedLocation, setFocusedLocation] = useAtom(focusedLocationAtom)
   const setMapClickedDestination = useSetAtom(mapClickedDestinationAtom)
+  const routeMode = useAtomValue(routeModeAtom)
+  const dayRouteGeoJSON = useAtomValue(dayRouteGeoJSONAtom)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -224,11 +233,40 @@ export function MapView({ trips }: MapViewProps) {
           <NavigationControl position="top-right" />
 
           {locations.length > 1 && (
-            <Source id="route" type="geojson" data={routeGeoJSON}>
+            <Source id="route" type="geojson" data={dayRouteGeoJSON ?? routeGeoJSON}>
+              {/* Driving / walking / cycling — single solid line */}
               <Layer
-                id="route-line"
+                id="route-main"
                 type="line"
-                paint={{ 'line-color': '#2563eb', 'line-width': 2, 'line-dasharray': [2, 1] }}
+                filter={['!', ['has', 'segmentType']]}
+                paint={dayRouteGeoJSON
+                  ? {
+                      'line-color': ['match', ['get', 'mode'],
+                        'driving', ROUTE_COLORS.driving,
+                        'walking', ROUTE_COLORS.walking,
+                        'cycling', ROUTE_COLORS.cycling,
+                        'transit', ROUTE_COLORS.transit,
+                        '#9ca3af',
+                      ],
+                      'line-width': 4,
+                      'line-opacity': 0.85,
+                    }
+                  : { 'line-color': '#2563eb', 'line-width': 2, 'line-dasharray': [2, 1] }
+                }
+              />
+              {/* Transit — solid purple line between stops */}
+              <Layer
+                id="route-transit"
+                type="line"
+                filter={['==', ['get', 'segmentType'], 'transit']}
+                paint={{ 'line-color': ROUTE_COLORS.transit, 'line-width': 3, 'line-opacity': 0.9 }}
+              />
+              {/* Walk legs to/from stops — dashed gray */}
+              <Layer
+                id="route-walk"
+                type="line"
+                filter={['==', ['get', 'segmentType'], 'walk']}
+                paint={{ 'line-color': '#374151', 'line-width': 2.5, 'line-dasharray': [3, 2], 'line-opacity': 0.75 }}
               />
             </Source>
           )}

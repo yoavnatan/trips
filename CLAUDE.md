@@ -7,6 +7,8 @@
 
 **Do NOT push to git unless the user explicitly asks.**
 
+I'm giving you full permission to read any file you need to understand the broad context. Don't ask for read permissions, just index and work.
+
 ## Project Overview
 A trip planning application with interactive maps.
 Users can create trips, divide them into days, and mark location points on a map with connected route lines.

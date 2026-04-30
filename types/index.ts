@@ -47,3 +47,14 @@ export interface SuggestedLocation {
   lng: number
   name: string
 }
+
+export type TransportMode = 'driving' | 'walking' | 'cycling' | 'transit'
+
+export type RouteGeoJSON = {
+  type: 'FeatureCollection'
+  features: Array<{
+    type: 'Feature'
+    geometry: { type: 'LineString'; coordinates: number[][] }
+    properties: Record<string, string>
+  }>
+}

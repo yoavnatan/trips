@@ -19,7 +19,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom } from '@/lib/store'
+import { selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, segmentModesAtom, dayRouteGeoJSONAtom } from '@/lib/store'
 import { addDay } from '@/app/actions/addDay'
 import { deleteLocation } from '@/app/actions/deleteLocation'
 import { deleteDay } from '@/app/actions/deleteDay'
@@ -27,7 +27,7 @@ import { reorderLocations } from '@/app/actions/reorderLocations'
 import { updateLocation } from '@/app/actions/updateLocation'
 import { haversineDistance, formatDistance } from '@/lib/utils'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
-import type { TripWithDaysAndLocations, ActionState, SuggestedLocation, LocationPoint } from '@/types'
+import type { TripWithDaysAndLocations, ActionState, SuggestedLocation, LocationPoint, TransportMode, RouteGeoJSON } from '@/types'
 
 interface ConfirmState {
   title: string
@@ -36,6 +36,32 @@ interface ConfirmState {
 }
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
+
+const MODE_ICONS: Record<TransportMode, string> = {
+  driving: '🚗',
+  walking: '🚶',
+  cycling: '🚲',
+  transit: '🚌',
+}
+
+const MODE_LABELS: Record<TransportMode, string> = {
+  driving: 'Drive',
+  walking: 'Walk',
+  cycling: 'Cycle',
+  transit: 'Transit',
+}
+
+const TRANSIT_TYPE_LABELS: Record<string, string> = {
+  bus: 'Bus', tram: 'Tram', subway: 'Metro',
+  metro: 'Metro', train: 'Train', ferry: 'Ferry',
+  monorail: 'Monorail', light_rail: 'Light Rail',
+}
+
+const TRANSIT_TYPE_ICONS: Record<string, string> = {
+  bus: '🚌', tram: '🚋', subway: '🚇',
+  metro: '🚇', train: '🚆', ferry: '⛴️',
+  monorail: '🚝', light_rail: '🚊',
+}
 
 interface TripDetailProps {
   trip: TripWithDaysAndLocations
@@ -232,6 +258,8 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                         />
                       )}
 
+                      {locs.length >= 2 && <DayRoute locs={locs} />}
+
                       {lastLoc && (
                         <div className="day-list__suggest">
                           <button
@@ -294,6 +322,457 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   )
 }
 
+type SegmentInfo = { from: string; to: string; distance: string; duration: string; kind?: 'walk' | 'transit'; lines?: string[]; transitType?: string }
+type DayRouteResult = { geojson: RouteGeoJSON; segments: SegmentInfo[]; totalDistance: string; totalDuration: string }
+
+function fmtDuration(seconds: number): string {
+  const mins = Math.round(seconds / 60)
+  const hrs = Math.floor(mins / 60)
+  return hrs > 0 ? `${hrs}h ${mins % 60}m` : `${mins}m`
+}
+
+
+function estimateTransitSecs(distKm: number, routeType: string): number {
+  const speeds: Record<string, number> = {
+    bus: 18, tram: 16, subway: 35, metro: 35,
+    train: 60, ferry: 25, monorail: 30, light_rail: 25,
+  }
+  return Math.round((distKm / (speeds[routeType] ?? 20)) * 3600)
+}
+
+type TransitStop = { lat: number; lng: number; name: string; lines: string[]; primaryRouteType: string }
+type WalkResult = { coordinates: number[][]; distKm: number; durSecs: number }
+type OsmStopNode = { type: 'node'; id: number; lat: number; lon: number; tags?: Record<string, string> }
+type OsmRoute = { type: 'relation'; tags?: Record<string, string>; members: Array<{ type: string; ref: number }> }
+
+// Single Overpass query: nearby stops + transit lines + route types serving them.
+async function findNearestStop(lat: number, lng: number): Promise<TransitStop | null> {
+  const query =
+    `[out:json][timeout:12];` +
+    `(node["highway"="bus_stop"](around:600,${lat},${lng});` +
+    `node["railway"="subway_entrance"](around:600,${lat},${lng});` +
+    `node["railway"="station"](around:600,${lat},${lng});` +
+    `node["railway"="tram_stop"](around:600,${lat},${lng});` +
+    `node["public_transport"="stop_position"]["name"](around:600,${lat},${lng});` +
+    `)->.stops;.stops out 10;` +
+    `rel(bn.stops)["type"="route"]["route"~"bus|tram|subway|train|metro|ferry|monorail|light_rail"];out;`
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query })
+    if (!res.ok) return null
+    const data = await res.json()
+    const elements = data.elements as Array<OsmStopNode | OsmRoute>
+
+    const nodes = elements.filter((e): e is OsmStopNode => e.type === 'node')
+    const routes = elements.filter((e): e is OsmRoute => e.type === 'relation')
+    if (!nodes.length) return null
+
+    // Pick nearest stop
+    let best = nodes[0]
+    let bestDist = haversineDistance(lat, lng, best.lat, best.lon)
+    for (const n of nodes.slice(1)) {
+      const d = haversineDistance(lat, lng, n.lat, n.lon)
+      if (d < bestDist) { bestDist = d; best = n }
+    }
+
+    // Routes serving this exact stop node
+    const servingRoutes = routes.filter((r) => r.members.some((m) => m.type === 'node' && m.ref === best.id))
+    const lines = servingRoutes.map((r) => r.tags?.ref ?? r.tags?.short_name).filter((s): s is string => Boolean(s)).slice(0, 6)
+    const primaryRouteType = servingRoutes[0]?.tags?.route ?? 'bus'
+
+    return { lat: best.lat, lng: best.lon, name: best.tags?.name ?? best.tags?.ref ?? 'Stop', lines, primaryRouteType }
+  } catch {
+    return null
+  }
+}
+
+async function fetchWalkRoute(from: { lat: number; lng: number }, to: { lat: number; lng: number }, token: string): Promise<WalkResult | null> {
+  const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/directions/v5/mapbox/walking/${coords}?access_token=${token}&geometries=geojson&overview=full`
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const route = data.routes?.[0]
+    if (!route) return null
+    return {
+      coordinates: route.geometry.coordinates as number[][],
+      distKm: (route.distance as number) / 1000,
+      durSecs: route.duration as number,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function fetchTransitRoute(locs: LocationPoint[], token: string): Promise<DayRouteResult> {
+  const stops = await Promise.all(locs.map((l) => findNearestStop(l.lat, l.lng)))
+
+  const features: RouteGeoJSON['features'] = []
+  const segments: SegmentInfo[] = []
+  let totalDistKm = 0
+  let totalSecs = 0
+
+  for (let i = 0; i < locs.length - 1; i++) {
+    const fromLoc = locs[i]
+    const toLoc = locs[i + 1]
+    const fromStop = stops[i]
+    const toStop = stops[i + 1]
+
+    const [walkFrom, walkTo] = await Promise.all([
+      fromStop ? fetchWalkRoute(fromLoc, fromStop, token) : Promise.resolve(null),
+      toStop ? fetchWalkRoute(toStop, toLoc, token) : Promise.resolve(null),
+    ])
+
+    // Walk to departure stop — show available lines so user knows what they're catching
+    if (fromStop && walkFrom) {
+      features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: walkFrom.coordinates }, properties: { segmentType: 'walk' } })
+      segments.push({ from: fromLoc.name, to: fromStop.name, distance: formatDistance(walkFrom.distKm), duration: fmtDuration(walkFrom.durSecs), kind: 'walk', lines: fromStop.lines })
+      totalDistKm += walkFrom.distKm
+      totalSecs += walkFrom.durSecs
+    }
+
+    // Transit leg — estimated duration based on mode type and straight-line distance
+    const txFrom = fromStop ?? fromLoc
+    const txTo = toStop ?? toLoc
+    const txDistKm = haversineDistance(txFrom.lat, txFrom.lng, txTo.lat, txTo.lng)
+    const routeType = fromStop?.primaryRouteType ?? 'bus'
+    const txSecs = estimateTransitSecs(txDistKm, routeType)
+    features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[txFrom.lng, txFrom.lat], [txTo.lng, txTo.lat]] }, properties: { segmentType: 'transit' } })
+    segments.push({ from: txFrom === fromStop ? fromStop.name : fromLoc.name, to: txTo === toStop ? toStop!.name : toLoc.name, distance: formatDistance(txDistKm), duration: `~${fmtDuration(txSecs)}`, kind: 'transit', transitType: routeType })
+    totalDistKm += txDistKm
+    totalSecs += txSecs
+
+    // Walk from arrival stop to destination
+    if (toStop && walkTo) {
+      features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: walkTo.coordinates }, properties: { segmentType: 'walk' } })
+      segments.push({ from: toStop.name, to: toLoc.name, distance: formatDistance(walkTo.distKm), duration: fmtDuration(walkTo.durSecs), kind: 'walk' })
+      totalDistKm += walkTo.distKm
+      totalSecs += walkTo.durSecs
+    }
+  }
+
+  return { geojson: { type: 'FeatureCollection', features }, segments, totalDistance: formatDistance(totalDistKm), totalDuration: `~${fmtDuration(totalSecs)}` }
+}
+
+async function fetchDayRoute(locs: LocationPoint[], mode: TransportMode, token: string): Promise<DayRouteResult | null> {
+  if (mode === 'transit') return fetchTransitRoute(locs, token)
+
+  const coords = locs.map((l) => `${l.lng},${l.lat}`).join(';')
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/directions/v5/mapbox/${mode}/${encodeURIComponent(coords)}` +
+        `?access_token=${token}&geometries=geojson&overview=full`
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const route = data.routes?.[0]
+    if (!route) return null
+
+    const legs = route.legs as Array<{ distance: number; duration: number }>
+    const segments: SegmentInfo[] = legs.map((leg, i) => ({
+      from: locs[i].name,
+      to: locs[i + 1].name,
+      distance: formatDistance(leg.distance / 1000),
+      duration: fmtDuration(leg.duration),
+    }))
+
+    return {
+      geojson: {
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', geometry: route.geometry as { type: 'LineString'; coordinates: number[][] }, properties: {} }],
+      },
+      segments,
+      totalDistance: formatDistance(route.distance / 1000),
+      totalDuration: fmtDuration(route.duration),
+    }
+  } catch {
+    return null
+  }
+}
+
+async function fetchSegmentRoute(
+  from: LocationPoint,
+  to: LocationPoint,
+  mode: Exclude<TransportMode, 'transit'>,
+  token: string
+): Promise<{ distance: string; duration: string; distKm: number; durSecs: number; geojson: RouteGeoJSON } | null> {
+  const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/directions/v5/mapbox/${mode}/${coords}` +
+        `?access_token=${token}&geometries=geojson&overview=full`
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const route = data.routes?.[0]
+    if (!route) return null
+    const distKm = (route.distance as number) / 1000
+    const durSecs = route.duration as number
+    return {
+      distance: formatDistance(distKm),
+      duration: fmtDuration(durSecs),
+      distKm,
+      durSecs,
+      geojson: {
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          geometry: route.geometry as { type: 'LineString'; coordinates: number[][] },
+          properties: { mode },
+        }],
+      },
+    }
+  } catch {
+    return null
+  }
+}
+
+type SegResult = {
+  distance: string
+  duration: string
+  distKm: number
+  durSecs: number
+  geojson: RouteGeoJSON | null
+  transitType?: string
+  transitLines?: string[]
+} | null | 'loading'
+
+function straightLineTransitResult(from: LocationPoint, to: LocationPoint): SegResult {
+  const distKm = haversineDistance(from.lat, from.lng, to.lat, to.lng)
+  const durSecs = estimateTransitSecs(distKm, 'bus')
+  return {
+    distance: formatDistance(distKm),
+    duration: `~${fmtDuration(durSecs)}`,
+    distKm,
+    durSecs,
+    geojson: {
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [[from.lng, from.lat], [to.lng, to.lat]] }, properties: { mode: 'transit' } }],
+    },
+  }
+}
+
+async function fetchSegmentTransit(from: LocationPoint, to: LocationPoint): Promise<SegResult> {
+  const [fromStop, toStop] = await Promise.all([
+    findNearestStop(from.lat, from.lng),
+    findNearestStop(to.lat, to.lng),
+  ])
+
+  const routeType = fromStop?.primaryRouteType ?? 'bus'
+
+  if (!fromStop && !toStop) return straightLineTransitResult(from, to)
+
+  const [walkFrom, walkTo] = await Promise.all([
+    fromStop ? fetchWalkRoute(from, fromStop, TOKEN) : Promise.resolve(null),
+    toStop ? fetchWalkRoute(toStop, to, TOKEN) : Promise.resolve(null),
+  ])
+
+  const features: RouteGeoJSON['features'] = []
+  let totalDistKm = 0
+  let totalDurSecs = 0
+
+  if (fromStop && walkFrom) {
+    features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: walkFrom.coordinates }, properties: { mode: 'walking' } })
+    totalDistKm += walkFrom.distKm
+    totalDurSecs += walkFrom.durSecs
+  }
+
+  const txFrom = fromStop ?? from
+  const txTo = toStop ?? to
+  const txDistKm = haversineDistance(txFrom.lat, txFrom.lng, txTo.lat, txTo.lng)
+  const txDurSecs = estimateTransitSecs(txDistKm, routeType)
+  features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[txFrom.lng, txFrom.lat], [txTo.lng, txTo.lat]] }, properties: { mode: 'transit' } })
+  totalDistKm += txDistKm
+  totalDurSecs += txDurSecs
+
+  if (toStop && walkTo) {
+    features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: walkTo.coordinates }, properties: { mode: 'walking' } })
+    totalDistKm += walkTo.distKm
+    totalDurSecs += walkTo.durSecs
+  }
+
+  return {
+    distance: formatDistance(totalDistKm),
+    duration: `~${fmtDuration(totalDurSecs)}`,
+    distKm: totalDistKm,
+    durSecs: totalDurSecs,
+    geojson: { type: 'FeatureCollection', features },
+    transitType: routeType,
+    transitLines: fromStop?.lines,
+  }
+}
+
+function SegmentRoutePanel({ from, to }: { from: LocationPoint; to: LocationPoint }) {
+  const segKey = `${from.id}-${to.id}`
+  const [segmentModes, setSegmentModes] = useAtom(segmentModesAtom)
+  const activeMode = segmentModes[segKey] ?? 'walking'
+  const [results, setResults] = useState<Record<TransportMode, SegResult>>({
+    driving: 'loading', walking: 'loading', cycling: 'loading', transit: 'loading',
+  })
+
+  useEffect(() => {
+    ;(['driving', 'walking', 'cycling'] as Array<Exclude<TransportMode, 'transit'>>).forEach((m) => {
+      fetchSegmentRoute(from, to, m, TOKEN).then((r) => {
+        setResults((prev) => ({ ...prev, [m]: r }))
+      })
+    })
+    // Show straight-line estimate immediately, then upgrade with stop data
+    setResults((prev) => ({ ...prev, transit: straightLineTransitResult(from, to) }))
+    fetchSegmentTransit(from, to).then((r) => {
+      setResults((prev) => ({ ...prev, transit: r }))
+    })
+  }, [from.id, to.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="segment-route">
+      {(['driving', 'walking', 'cycling', 'transit'] as TransportMode[]).map((m) => {
+        const r = results[m]
+        return (
+          <button
+            key={m}
+            className={`segment-route__card${activeMode === m ? ' segment-route__card--active' : ''}`}
+            onClick={() => setSegmentModes((prev) => ({ ...prev, [segKey]: m }))}
+          >
+            <span className="segment-route__icon">{MODE_ICONS[m]}</span>
+            <span className="segment-route__label">{MODE_LABELS[m]}</span>
+            {r === 'loading' ? (
+              <span className="segment-route__meta">…</span>
+            ) : r ? (
+              <>
+                {m === 'transit' && r.transitType && (
+                  <span className="segment-route__transit-type">
+                    {TRANSIT_TYPE_ICONS[r.transitType] ?? '🚌'} {TRANSIT_TYPE_LABELS[r.transitType] ?? r.transitType}
+                  </span>
+                )}
+                <span className="segment-route__meta">{r.distance} · {r.duration}</span>
+              </>
+            ) : (
+              <span className="segment-route__meta">—</span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function DayRoute({ locs }: { locs: LocationPoint[] }) {
+  const [segmentModes, setSegmentModes] = useAtom(segmentModesAtom)
+  const setDayRouteGeoJSON = useSetAtom(dayRouteGeoJSONAtom)
+  const [allData, setAllData] = useState<Record<string, Record<TransportMode, SegResult>>>({})
+
+  const pairs = useMemo(
+    () => locs.slice(0, -1).map((loc, i) => ({ from: loc, to: locs[i + 1], key: `${loc.id}-${locs[i + 1].id}` })),
+    [locs]
+  )
+  const coordsKey = useMemo(() => locs.map((l) => `${l.lat},${l.lng}`).join(';'), [locs])
+
+  useEffect(() => {
+    const init: Record<string, Record<TransportMode, SegResult>> = {}
+    for (const { from, to, key } of pairs) {
+      init[key] = { driving: 'loading', walking: 'loading', cycling: 'loading', transit: straightLineTransitResult(from, to) }
+    }
+    setAllData(init)
+
+    for (const { from, to, key } of pairs) {
+      ;(['driving', 'walking', 'cycling'] as Array<Exclude<TransportMode, 'transit'>>).forEach((m) => {
+        fetchSegmentRoute(from, to, m, TOKEN).then((r) => {
+          setAllData((prev) => ({ ...prev, [key]: { ...prev[key], [m]: r } }))
+        })
+      })
+      fetchSegmentTransit(from, to).then((r) => {
+        setAllData((prev) => ({ ...prev, [key]: { ...prev[key], transit: r } }))
+      })
+    }
+  }, [coordsKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Combine all selected segments' GeoJSONs for the map
+  useEffect(() => {
+    const features: RouteGeoJSON['features'] = []
+    for (const { key } of pairs) {
+      const mode = segmentModes[key] ?? 'walking'
+      const data = allData[key]?.[mode]
+      if (data && data !== 'loading' && data.geojson) {
+        features.push(...data.geojson.features)
+      }
+    }
+    setDayRouteGeoJSON(features.length > 0 ? { type: 'FeatureCollection', features } : null)
+  }, [segmentModes, allData]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    return () => { setDayRouteGeoJSON(null) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totals = useMemo(() => {
+    let totalDistKm = 0
+    let totalDurSecs = 0
+    for (const { key } of pairs) {
+      const mode = segmentModes[key] ?? 'walking'
+      const data = allData[key]?.[mode]
+      if (!data || data === 'loading') return null
+      totalDistKm += data.distKm
+      totalDurSecs += data.durSecs
+    }
+    return { distance: formatDistance(totalDistKm), duration: fmtDuration(totalDurSecs) }
+  }, [pairs, segmentModes, allData])
+
+  return (
+    <div className="day-route">
+      {locs.map((loc, i) => {
+        const pair = pairs[i]
+        const mode = pair ? (segmentModes[pair.key] ?? 'walking') : null
+        const data = pair && mode ? allData[pair.key]?.[mode] : null
+
+        return (
+          <div key={loc.id} className="day-route__row">
+            <div className="day-route__stop">
+              <span className="day-route__stop-dot" />
+              <span className="day-route__stop-name">{loc.name}</span>
+            </div>
+            {pair && mode && (
+              <div className="day-route__leg">
+                <div className={`day-route__leg-line day-route__leg-line--${mode}`} />
+                <div className="day-route__leg-content">
+                  <div className="day-route__leg-modes">
+                    {(['driving', 'walking', 'cycling', 'transit'] as TransportMode[]).map((m) => (
+                      <button
+                        key={m}
+                        className={`day-route__leg-mode${mode === m ? ' day-route__leg-mode--active' : ''}`}
+                        onClick={() => setSegmentModes((prev) => ({ ...prev, [pair.key]: m }))}
+                        title={MODE_LABELS[m]}
+                      >
+                        {MODE_ICONS[m]}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="day-route__leg-meta">
+                    {data === 'loading' ? '…' : data
+                      ? `${data.distance} · ${data.duration}${mode === 'transit' && data.transitType ? ` · ${TRANSIT_TYPE_LABELS[data.transitType] ?? data.transitType}` : ''}`
+                      : '—'}
+                  </span>
+                  {mode === 'transit' && data && data !== 'loading' && data.transitLines?.length ? (
+                    <div className="day-route__leg-transit-lines">
+                      {data.transitLines.map((l) => (
+                        <span key={l} className="day-route__leg-transit-badge">{l}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {totals && (
+        <div className="day-route__total">
+          {totals.distance} · {totals.duration} total
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface SortableLocationListProps {
   locs: LocationPoint[]
   deletingLocationId: string | null
@@ -351,6 +830,7 @@ function SortableLocationList({ locs, deletingLocationId, onFocus, onDelete }: S
               <SortableLocationItem
                 key={loc.id}
                 loc={loc}
+                nextLoc={i < items.length - 1 ? items[i + 1] : null}
                 distToNext={i < items.length - 1 ? segDists[i] : null}
                 isDeleting={deletingLocationId === loc.id}
                 onFocus={() => onFocus(loc)}
@@ -367,15 +847,17 @@ function SortableLocationList({ locs, deletingLocationId, onFocus, onDelete }: S
 
 interface SortableLocationItemProps {
   loc: LocationPoint
+  nextLoc: LocationPoint | null
   distToNext: number | null
   isDeleting: boolean
   onFocus: () => void
   onDelete: () => void
 }
 
-function SortableLocationItem({ loc, distToNext, isDeleting, onFocus, onDelete }: SortableLocationItemProps) {
+function SortableLocationItem({ loc, nextLoc, distToNext, isDeleting, onFocus, onDelete }: SortableLocationItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: loc.id })
   const [notesOpen, setNotesOpen] = useState(false)
+  const [segmentOpen, setSegmentOpen] = useState(false)
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -414,8 +896,16 @@ function SortableLocationItem({ loc, distToNext, isDeleting, onFocus, onDelete }
       {notesOpen && (
         <LocationNotesEditor loc={loc} onClose={() => setNotesOpen(false)} />
       )}
-      {distToNext !== null && (
-        <span className="location-list__dist">↓ {formatDistance(distToNext)}</span>
+      {distToNext !== null && nextLoc && (
+        <>
+          <button
+            className={`location-list__dist${segmentOpen ? ' location-list__dist--open' : ''}`}
+            onClick={() => setSegmentOpen((o) => !o)}
+          >
+            ↓ {formatDistance(distToNext)}
+          </button>
+          {segmentOpen && <SegmentRoutePanel from={loc} to={nextLoc} />}
+        </>
       )}
     </li>
   )
