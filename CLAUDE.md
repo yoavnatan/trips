@@ -136,6 +136,12 @@ Actual folder structure used:
 7. AI-powered "suggest next location" (Mapbox Search API)
 8. Shareable read-only link — `/share/[token]` — map + itinerary, no login required
 
+## Production
+- Deployed on Vercel: https://trips-8sq6.vercel.app
+- Auto-deploys on every `git push origin main`
+- DB: Neon PostgreSQL (same instance as dev)
+- Google OAuth callback: `https://trips-8sq6.vercel.app/api/auth/callback/google`
+
 ## Responsive / Mobile-first
 - Breakpoint: 768px
 - Mobile: map (45vh) stacked above scrollable sidebar
