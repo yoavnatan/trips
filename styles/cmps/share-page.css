@@ -2,12 +2,14 @@
 
 .share-layout {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
 }
 
 .share-layout__map {
-  flex: 1;
+  height: 40vh;
+  flex-shrink: 0;
   position: relative;
 }
 
@@ -17,11 +19,32 @@
 }
 
 .share-layout__sidebar {
-  width: 380px;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   overflow-y: auto;
-  border-left: 1px solid #e5e7eb;
+  border-top: 1px solid #e5e7eb;
+  border-left: none;
   background: #f9fafb;
+}
+
+@media (min-width: 768px) {
+  .share-layout {
+    flex-direction: row;
+  }
+
+  .share-layout__map {
+    flex: 1;
+    height: auto;
+  }
+
+  .share-layout__sidebar {
+    width: 380px;
+    flex: none;
+    height: 100%;
+    border-top: none;
+    border-left: 1px solid #e5e7eb;
+  }
 }
 
 /* Sidebar */

@@ -11,6 +11,7 @@ Users can create trips, divide them into days, and mark location points on a map
 - PostgreSQL (Neon) + Prisma 7 ORM + @prisma/adapter-pg
 - Mapbox (react-map-gl v8)
 - Jotai v2 (client state)
+- NextAuth.js v5 (email/password auth; Google OAuth configured but not yet working)
 
 ## Database Schema
 
@@ -19,6 +20,7 @@ model User {
   id        String   @id @default(cuid())
   email     String   @unique
   name      String
+  password  String?
   trips     Trip[]
   createdAt DateTime @default(now())
 }
@@ -29,6 +31,7 @@ model Trip {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title       String
   destination String
+  shareToken  String   @unique @default(cuid())
   days        Day[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -55,6 +58,11 @@ model LocationPoint {
 }
 ```
 
+## Prisma / Neon notes
+- `npx prisma migrate dev` fails with P1001 — the Prisma Rust engine cannot reach Neon over TCP.
+- Workaround: run schema changes via the **Neon SQL Editor** (console.neon.tech), then run `npx prisma generate` locally.
+- The app itself connects fine via `@prisma/adapter-pg`.
+
 ## Code Style Guidelines
 
 ### Functions
@@ -68,94 +76,72 @@ model LocationPoint {
 - Create interfaces in /types folder
 - Always specify function return types
 
-Example:
-```typescript
-// ✅ Good
-function getTripById(id: string): Promise<Trip | null> {
-  return prisma.trip.findUnique({ where: { id } });
-}
-
-// ❌ Bad
-const getTripById = async (id) => {
-  return prisma.trip.findUnique({ where: { id } });
-}
-```
-
 ### CSS Organization
 **Main file**: `/styles/main.css`
 
-Structure with organized imports:
-```css
-/* ======================
-   Reset & Base
-   ====================== */
-@import './reset.css';
-@import './base.css';
-@import './variables.css';
-
-/* ======================
-   Layout
-   ====================== */
-@import './layout/header.css';
-@import './layout/sidebar.css';
-@import './layout/footer.css';
-
-/* ======================
-   Components
-   ====================== */
-@import './components/button.css';
-@import './components/card.css';
-@import './components/form.css';
-@import './components/map.css';
-
-/* ======================
-   Pages
-   ====================== */
-@import './pages/trip.css';
-@import './pages/dashboard.css';
+Actual folder structure used:
+```
+/styles
+  main.css
+  /setup       - variables.css, reset.css
+  /basics      - layout.css, home.css, login.css
+  /cmps        - one file per component/page
 ```
 
 **Rules**:
 - No inline styles in JSX
-- Each component can have its own CSS file
+- Mobile-first: write default styles for mobile, add `@media (min-width: 768px)` for desktop
+- Breakpoint variable: `--breakpoint-md: 768px` (use literal `768px` in media queries)
+- Each component has its own file in /styles/cmps/
 - All CSS files must be imported in main.css
-- Keep imports organized by section with comments
-- Use meaningful class names (BEM methodology preferred)
+- BEM class names preferred
 
 ## Folder Structure
 
+```
 /app
-/actions          - Server Actions for data mutations
-/api              - API routes (if needed)
-/(dashboard)      - Dashboard routes
-/(trip)           - Trip-related routes
-layout.tsx        - Root layout
-page.tsx          - Home page
+  /actions        - Server Actions (addDay, addLocationPoint, createTrip, deleteDay,
+                    deleteLocation, reorderLocations, updateLocation, registerUser,
+                    signOutAction)
+  /api/auth       - NextAuth route
+  /share/[token]  - Public read-only shared trip page
+  layout.tsx
+  page.tsx        - Main app (map + sidebar)
 /components
-/ui               - Reusable UI components
-/map              - Map-related components
-/trip             - Trip-specific components
+  /map            - MapView.tsx, ShareMap.tsx
+  /trip           - Sidebar.tsx, TripDetail.tsx, TripList.tsx
+  /ui             - AuthModal.tsx, ConfirmModal.tsx, TripForm.tsx
 /lib
-/db.ts            - Prisma client instance
-/utils.ts         - Helper functions
+  /db.ts          - Prisma client (uses @prisma/adapter-pg)
+  /auth.ts        - NextAuth config
+  /store.ts       - Jotai atoms
+  /utils.ts       - haversineDistance, formatDistance
+  /providers.tsx  - Jotai + NextAuth providers
 /types
-/index.ts         - TypeScript interfaces and types
+  /index.ts       - All TypeScript interfaces
 /styles
-main.css          - Main CSS file with imports
-/components       - Component-specific CSS
-/layout           - Layout CSS
-/pages            - Page-specific CSS
+  main.css
+  /setup, /basics, /cmps
 /prisma
-schema.prisma     - Database schema
+  schema.prisma
+```
 
-## Key Features
-1. User authentication (future)
+## Key Features (all implemented)
+1. User auth — email/password registration + login. Google OAuth configured but blocked (needs OAuth consent screen approval).
 2. Create and manage trips
-3. Add days to trips
-4. Mark location points on interactive map
-5. Draw route lines connecting points in order
-6. Add summaries and notes to days
-7. AI-powered suggestions (future)
+3. Add days to trips (with optional summary)
+4. Mark location points on interactive Mapbox map (click to add, drag to reorder, delete)
+5. Route lines connecting points per day (dashed blue line)
+6. Notes on locations (inline editor)
+7. AI-powered "suggest next location" (Mapbox Search API)
+8. Shareable read-only link — `/share/[token]` — map + itinerary, no login required
+
+## Responsive / Mobile-first
+- Breakpoint: 768px
+- Mobile: map (45vh) stacked above scrollable sidebar
+- Desktop: map (flex: 1) side-by-side with 360px sidebar
+- Share page follows same pattern (40vh map on mobile)
+- All components are single-column and work at any width
 
 ## Development Guidelines
 
@@ -175,22 +161,7 @@ schema.prisma     - Database schema
 - LocationPoint.orderIndex determines route line order
 - Day.dayNumber starts from 1
 - Update orderIndex when reordering points
-- Use React Leaflet for map rendering
-
-## Current Status
-
-### Completed
-- [x] Next.js project initialized
-- [x] Prisma installed, schema defined, migration run
-- [x] Neon PostgreSQL connected
-- [x] Folder structure created
-- [x] CSS organization set up (setup/, basics/, cmps/)
-- [x] Jotai state management wired up
-- [x] Main page: Mapbox map + trip creation form + trip list
-
-### Next
-- Add days to a trip
-- Add location points per day on the map
+- Map uses react-map-gl v8 with Mapbox Streets style
 
 ## CURRENT_TASK.md convention
 

@@ -1,39 +1,38 @@
 ## User notes
 
-according to your suggestions: let's go:
-
-please make it one by one and tell me what is done.
-
 read claude.md allways before starting
 
 
-1. Delete location / day (most urgent)
-You can accidentally add a wrong location point with no way to remove it. This is a basic gap that blocks real use. A small trash icon on each location in the list + per-day delete would cover it. (Done)
-
-2. Reorder locations within a day
-Right now locations are ordered by orderIndex (insert order). Drag-to-reorder or up/down arrows would let users fix the route order without deleting and re-adding. (Done)
-
-3. Authentication
-Everything runs under a hardcoded DEV_USER_ID. If you want to actually use this app or share it, you need real login. NextAuth.js with Google OAuth is the fastest path — maybe 2-3 hours of work.
-make it possible to make auth with google! 
-(Done, google is not working for now)
-
-4. Notes on locations
-The schema already has a notes field on LocationPoint. Tapping a marker could open a detail panel to read/edit notes and rename the location. (Done)
-
-5. Export / share trip
-A printable day-by-day itinerary (or shareable link) would make the app feel finished.
-(Done — shareable link via /share/[token]. Needs DB migration when Neon is reachable: run `npx prisma migrate dev --name add-share-token`) Done
-
-6. Configure mobile first attitude, update the claude.md accordingly, make the app fully responsive, yet keep it simple.
-
-at the end: 
-
-a. please write where you think is the best way to save tokens, the context file, explain in a clear way what is done till now, update the claude.md to update the file when needed so I could use you more efficieantly. 
-
-b. suggest here (claude notes) best way to continue. 
+1. needs to fix google oauth because it's leading to a 404 error page when login via google aouth.
 
 
 ## Claude notes
 
+### א. חיסכון בtokens — איך להשתמש בי בצורה יעילה
 
+**הבעיה:** כל שיחה חדשה מתחילה מאפס. אם לא תגיד לי מה עשינו, אני לא יודע.
+
+**הפתרון הכי טוב:** CLAUDE.md הוא הזיכרון הקבוע שלי. עדכנתי אותו לגמרי — הוא כולל עכשיו:
+- כל הפיצ'רים שמומשו
+- schema מעודכן (כולל shareToken)
+- מבנה תיקיות אמיתי
+- הערות Prisma/Neon
+- כלל mobile-first
+
+בתחילת כל session: תגיד לי `read CLAUDE.md` ואז תסביר מה אתה רוצה לעשות. אין צורך להסביר מה נבנה בעבר.
+
+CURRENT_TASK.md משמש לשיחה שוטפת — User notes מה אתה רוצה, Claude notes מה שמרתי לך.
+
+---
+
+### ב. המלצות להמשך
+
+**הדבר הכי שימושי עכשיו:**
+
+1. **Google OAuth** — האפליקציה כבר מוגדרת, רק צריך OAuth consent screen ב-Google Cloud Console (15 דקות עבודה). בלי זה אנשים אמיתיים לא יכולים להירשם.
+
+2. **Deploy לפרודקשן** — Vercel + Neon כבר עובדים ביחד מצוין. Deploy בחינם, 10 דקות עבודה. אז תוכל לשתף את הapp עם אחרים.
+
+3. **AI summaries per day** — לכפתור "Suggest next location" יש כבר infrastructure. אפשר להוסיף "Generate day summary" שכותב תקציר של היום אוטומטית עם Claude API.
+
+**המלצתי:** תתחיל עם Deploy — זה הדבר שהכי ישנה את החוויה שלך עם הapp.

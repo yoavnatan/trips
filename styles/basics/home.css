@@ -1,27 +1,51 @@
 .home-layout {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
 }
 
 .home-layout__map {
-  flex: 1;
+  height: 45vh;
+  flex-shrink: 0;
   position: relative;
 }
 
 .home-layout__sidebar {
-  width: 360px;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   overflow-y: auto;
-  padding: 1.25rem;
-  border-left: 1px solid #e5e7eb;
+  padding: 1rem;
+  border-top: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 .home-layout__trips-heading {
   font-size: 1rem;
   font-weight: 600;
   margin-bottom: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .home-layout {
+    flex-direction: row;
+  }
+
+  .home-layout__map {
+    flex: 1;
+    height: auto;
+  }
+
+  .home-layout__sidebar {
+    width: 360px;
+    flex: none;
+    height: 100%;
+    padding: 1.25rem;
+    border-top: none;
+    border-left: 1px solid #e5e7eb;
+    gap: 1.25rem;
+  }
 }
