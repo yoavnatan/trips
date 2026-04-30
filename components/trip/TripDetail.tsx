@@ -24,6 +24,7 @@ import { addDay } from '@/app/actions/addDay'
 import { deleteLocation } from '@/app/actions/deleteLocation'
 import { deleteDay } from '@/app/actions/deleteDay'
 import { reorderLocations } from '@/app/actions/reorderLocations'
+import { updateLocation } from '@/app/actions/updateLocation'
 import { haversineDistance, formatDistance } from '@/lib/utils'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import type { TripWithDaysAndLocations, ActionState, SuggestedLocation, LocationPoint } from '@/types'
@@ -355,6 +356,7 @@ interface SortableLocationItemProps {
 
 function SortableLocationItem({ loc, distToNext, isDeleting, onFocus, onDelete }: SortableLocationItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: loc.id })
+  const [notesOpen, setNotesOpen] = useState(false)
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -368,9 +370,19 @@ function SortableLocationItem({ loc, distToNext, isDeleting, onFocus, onDelete }
         <span className="location-list__drag-handle" {...attributes} {...listeners} title="Drag to reorder">
           ⠿
         </span>
-        <button className="location-list__name" onClick={onFocus}>
-          {loc.name}
-        </button>
+        <div className="location-list__name-block">
+          <button className="location-list__name" onClick={onFocus}>
+            {loc.name}
+          </button>
+          {!notesOpen && (
+            <button
+              className={`location-list__notes-preview${loc.notes ? '' : ' location-list__notes-preview--empty'}`}
+              onClick={() => setNotesOpen(true)}
+            >
+              {loc.notes ?? 'Add notes…'}
+            </button>
+          )}
+        </div>
         <button
           className="location-list__delete"
           disabled={isDeleting}
@@ -380,9 +392,43 @@ function SortableLocationItem({ loc, distToNext, isDeleting, onFocus, onDelete }
           ×
         </button>
       </div>
+      {notesOpen && (
+        <LocationNotesEditor loc={loc} onClose={() => setNotesOpen(false)} />
+      )}
       {distToNext !== null && (
         <span className="location-list__dist">↓ {formatDistance(distToNext)}</span>
       )}
     </li>
+  )
+}
+
+function LocationNotesEditor({ loc, onClose }: { loc: LocationPoint; onClose: () => void }) {
+  const router = useRouter()
+  const [state, formAction, pending] = useActionState(updateLocation, {})
+
+  useEffect(() => {
+    if (state.success) { router.refresh(); onClose() }
+  }, [state.success]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <form className="location-notes-editor" action={formAction}>
+      <input type="hidden" name="id" value={loc.id} />
+      <input type="hidden" name="name" value={loc.name} />
+      <textarea
+        className="location-notes-editor__textarea"
+        name="notes"
+        defaultValue={loc.notes ?? ''}
+        placeholder="Add notes…"
+        rows={2}
+        autoFocus
+      />
+      {state.error && <p className="location-notes-editor__error">{state.error}</p>}
+      <div className="location-notes-editor__actions">
+        <button type="button" className="location-notes-editor__cancel" onClick={onClose}>Cancel</button>
+        <button type="submit" disabled={pending} className="location-notes-editor__submit">
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </form>
   )
 }

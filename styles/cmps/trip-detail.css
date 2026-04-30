@@ -200,11 +200,17 @@
   cursor: grabbing;
 }
 
+.location-list__name-block {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
 .location-list__name {
   font-size: 0.8125rem;
   color: #111827;
-  padding: 0.25rem 0.25rem;
-  flex: 1;
+  padding: 0.25rem 0.25rem 0;
   background: none;
   border: none;
   text-align: left;
@@ -215,6 +221,104 @@
 .location-list__name:hover {
   color: #2563eb;
   text-decoration: underline;
+}
+
+.location-list__notes-preview {
+  font-size: 0.6875rem;
+  color: #6b7280;
+  padding: 0 0.25rem 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.location-list__notes-preview:hover {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.location-list__notes-preview--empty {
+  color: #d1d5db;
+  font-style: italic;
+}
+
+.location-list__notes-preview--empty:hover {
+  color: #9ca3af;
+  text-decoration: none;
+}
+
+.location-notes-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.25rem 0.25rem 0.375rem 1.5rem;
+}
+
+.location-notes-editor__textarea {
+  padding: 0.375rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 52px;
+  width: 100%;
+}
+
+.location-notes-editor__textarea:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+.location-notes-editor__error {
+  font-size: 0.75rem;
+  color: #dc2626;
+}
+
+.location-notes-editor__actions {
+  display: flex;
+  gap: 0.375rem;
+  justify-content: flex-end;
+}
+
+.location-notes-editor__cancel {
+  padding: 0.25rem 0.625rem;
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.location-notes-editor__cancel:hover {
+  border-color: #9ca3af;
+  color: #374151;
+}
+
+.location-notes-editor__submit {
+  padding: 0.25rem 0.625rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.location-notes-editor__submit:hover {
+  background: #1d4ed8;
+}
+
+.location-notes-editor__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .location-list__delete {

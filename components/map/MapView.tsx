@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useRef, useActionState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
+import { useRouter } from 'next/navigation'
 import Map, { Marker, Source, Layer, NavigationControl, Popup } from 'react-map-gl/mapbox'
 import type { MapRef } from 'react-map-gl/mapbox'
 import type { MapMouseEvent } from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom } from '@/lib/store'
 import { addLocationPoint } from '@/app/actions/addLocationPoint'
-import type { TripWithDaysAndLocations, ActionState } from '@/types'
+import { updateLocation } from '@/app/actions/updateLocation'
+import type { TripWithDaysAndLocations, ActionState, LocationPoint } from '@/types'
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
 
@@ -87,6 +89,7 @@ export function MapView({ trips }: MapViewProps) {
   const mapRef = useRef<MapRef>(null)
   const [mounted, setMounted] = useState(false)
   const [pendingPoint, setPendingPoint] = useState<PendingPoint | null>(null)
+  const [editingLocation, setEditingLocation] = useState<LocationPoint | null>(null)
   const selectedTrip = useAtomValue(selectedTripAtom)
   const selectedDayId = useAtomValue(selectedDayIdAtom)
   const [suggestedLocation, setSuggestedLocation] = useAtom(suggestedLocationAtom)
@@ -185,7 +188,9 @@ export function MapView({ trips }: MapViewProps) {
                 title={point.name}
                 onClick={(e) => {
                   e.stopPropagation()
-                  mapRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 15, duration: 1000 })
+                  mapRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 15, duration: 800 })
+                  setEditingLocation(point)
+                  setPendingPoint(null)
                 }}
               >
                 <span className="map-marker__number">{index + 1}</span>
@@ -212,6 +217,22 @@ export function MapView({ trips }: MapViewProps) {
               />
             </Popup>
           )}
+
+          {editingLocation && (
+            <Popup
+              latitude={editingLocation.lat}
+              longitude={editingLocation.lng}
+              onClose={() => setEditingLocation(null)}
+              closeOnClick={false}
+              anchor="bottom"
+            >
+              <EditLocationForm
+                key={editingLocation.id}
+                location={editingLocation}
+                onClose={() => setEditingLocation(null)}
+              />
+            </Popup>
+          )}
         </Map>
       )}
     </div>
@@ -219,6 +240,45 @@ export function MapView({ trips }: MapViewProps) {
 }
 
 const initialState: ActionState = {}
+
+function EditLocationForm({ location, onClose }: { location: LocationPoint; onClose: () => void }) {
+  const router = useRouter()
+  const [state, formAction, pending] = useActionState(updateLocation, {})
+
+  useEffect(() => {
+    if (state.success) { router.refresh(); onClose() }
+  }, [state.success]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <form className="edit-location-form" action={formAction}>
+      <input type="hidden" name="id" value={location.id} />
+      <label className="edit-location-form__label">Name</label>
+      <input
+        className="edit-location-form__input"
+        name="name"
+        type="text"
+        defaultValue={location.name}
+        required
+        autoFocus
+      />
+      <label className="edit-location-form__label">Notes</label>
+      <textarea
+        className="edit-location-form__textarea"
+        name="notes"
+        defaultValue={location.notes ?? ''}
+        placeholder="Add notes…"
+        rows={3}
+      />
+      {state.error && <p className="edit-location-form__error">{state.error}</p>}
+      <div className="edit-location-form__actions">
+        <button type="button" className="edit-location-form__cancel" onClick={onClose}>Cancel</button>
+        <button type="submit" disabled={pending} className="edit-location-form__submit">
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </form>
+  )
+}
 
 function AddPointForm({
   dayId, lat, lng, suggestions, loading, onClose,
