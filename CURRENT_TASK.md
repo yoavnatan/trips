@@ -2,8 +2,7 @@
 
 read claude.md allways before starting
 
-
-1. needs to fix google oauth because it's leading to a 404 error page when login via google aouth.
+1. let's deploy
 
 
 ## Claude notes
