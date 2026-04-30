@@ -1,5 +1,12 @@
 # Trip Planner Application
 
+## How to start a session efficiently
+1. Read this file fully
+2. Read CURRENT_TASK.md
+3. Start working — no need to read code files unless changing something specific
+
+**Do NOT push to git unless the user explicitly asks.**
+
 ## Project Overview
 A trip planning application with interactive maps.
 Users can create trips, divide them into days, and mark location points on a map with connected route lines.
@@ -11,10 +18,20 @@ Users can create trips, divide them into days, and mark location points on a map
 - PostgreSQL (Neon) + Prisma 7 ORM + @prisma/adapter-pg
 - Mapbox (react-map-gl v8)
 - Jotai v2 (client state)
-- NextAuth.js v5 (email/password auth; Google OAuth configured but not yet working)
+- NextAuth.js v5 (email/password + Google OAuth)
+
+## Production
+- Vercel: https://trips-8sq6.vercel.app
+- Auto-deploys on `git push origin main`
+- DB: Neon PostgreSQL (same for dev + prod)
+- Google OAuth callback: `https://trips-8sq6.vercel.app/api/auth/callback/google`
+
+## Prisma / Neon
+- `npx prisma migrate dev` fails (Prisma Rust engine can't reach Neon TCP)
+- Workaround: run SQL via Neon SQL Editor, then `npx prisma generate` locally
+- App connects fine via `@prisma/adapter-pg`
 
 ## Database Schema
-
 ```prisma
 model User {
   id        String   @id @default(cuid())
@@ -24,7 +41,6 @@ model User {
   trips     Trip[]
   createdAt DateTime @default(now())
 }
-
 model Trip {
   id          String   @id @default(cuid())
   userId      String
@@ -36,7 +52,6 @@ model Trip {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
-
 model Day {
   id        String          @id @default(cuid())
   tripId    String
@@ -45,11 +60,10 @@ model Day {
   summary   String?
   locations LocationPoint[]
 }
-
 model LocationPoint {
-  id         String @id @default(cuid())
+  id         String  @id @default(cuid())
   dayId      String
-  day        Day    @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  day        Day     @relation(fields: [dayId], references: [id], onDelete: Cascade)
   lat        Float
   lng        Float
   orderIndex Int
@@ -58,127 +72,80 @@ model LocationPoint {
 }
 ```
 
-## Prisma / Neon notes
-- `npx prisma migrate dev` fails with P1001 — the Prisma Rust engine cannot reach Neon over TCP.
-- Workaround: run schema changes via the **Neon SQL Editor** (console.neon.tech), then run `npx prisma generate` locally.
-- The app itself connects fine via `@prisma/adapter-pg`.
-
-## Code Style Guidelines
-
-### Functions
-- ✅ Always use function declarations: `function createTrip() {}`
-- ❌ Never use const arrow functions: `const createTrip = () => {}`
-- Exception: callbacks in map/filter/forEach can use arrows
-
-### TypeScript
-- ✅ Always provide explicit types
-- ❌ Never use `any` type - use `unknown` if truly needed
-- Create interfaces in /types folder
-- Always specify function return types
-
-### CSS Organization
-**Main file**: `/styles/main.css`
-
-Actual folder structure used:
-```
-/styles
-  main.css
-  /setup       - variables.css, reset.css
-  /basics      - layout.css, home.css, login.css
-  /cmps        - one file per component/page
+## Jotai Store — lib/store.ts
+```ts
+selectedTripAtom          // Trip | null — currently open trip
+selectedDayIdAtom         // string | null — currently open day
+suggestedLocationAtom     // SuggestedLocation | null — AI suggestion to add
+focusedLocationAtom       // {lat, lng} | null — fly map to this point
+mapClickedDestinationAtom // string | null — city name from map click → fills TripForm
 ```
 
-**Rules**:
-- No inline styles in JSX
-- Mobile-first: write default styles for mobile, add `@media (min-width: 768px)` for desktop
-- Breakpoint variable: `--breakpoint-md: 768px` (use literal `768px` in media queries)
-- Each component has its own file in /styles/cmps/
-- All CSS files must be imported in main.css
-- BEM class names preferred
+## Key Patterns
+
+### Map click without day selected
+→ reverse geocodes to city/country level → sets `mapClickedDestinationAtom` → TripForm destination field auto-fills
+
+### TripForm destination
+Controlled input with 300ms debounced Mapbox forward geocode autocomplete (`types=place,locality,region,country`)
+
+### Clicking a location in the list
+→ sets `focusedLocationAtom` → MapView flyTo zoom 14
+
+### Day selected
+→ MapView fitBounds to all day locations (padding 80, maxZoom 15)
+
+### Map hint
+Shows "Day X selected — click the map to add a location" when a day is open
 
 ## Folder Structure
-
 ```
 /app
-  /actions        - Server Actions (addDay, addLocationPoint, createTrip, deleteDay,
-                    deleteLocation, reorderLocations, updateLocation, registerUser,
-                    signOutAction)
+  /actions        - addDay, addLocationPoint, createTrip, deleteDay,
+                    deleteLocation, reorderLocations, updateLocation,
+                    registerUser, signOutAction
   /api/auth       - NextAuth route
   /share/[token]  - Public read-only shared trip page
-  layout.tsx
-  page.tsx        - Main app (map + sidebar)
+  layout.tsx, page.tsx
 /components
   /map            - MapView.tsx, ShareMap.tsx
   /trip           - Sidebar.tsx, TripDetail.tsx, TripList.tsx
   /ui             - AuthModal.tsx, ConfirmModal.tsx, TripForm.tsx
 /lib
-  /db.ts          - Prisma client (uses @prisma/adapter-pg)
-  /auth.ts        - NextAuth config
-  /store.ts       - Jotai atoms
-  /utils.ts       - haversineDistance, formatDistance
-  /providers.tsx  - Jotai + NextAuth providers
-/types
-  /index.ts       - All TypeScript interfaces
+  db.ts, auth.ts, store.ts, utils.ts, providers.tsx
+/types/index.ts
 /styles
   main.css
-  /setup, /basics, /cmps
-/prisma
-  schema.prisma
+  /setup — variables.css (has --breakpoint-md: 768px), reset.css
+  /basics — home.css (mobile-first layout), login.css
+  /cmps — one file per component
+/prisma/schema.prisma
 ```
 
-## Key Features (all implemented)
-1. User auth — email/password registration + login. Google OAuth configured but blocked (needs OAuth consent screen approval).
-2. Create and manage trips
-3. Add days to trips (with optional summary)
-4. Mark location points on interactive Mapbox map (click to add, drag to reorder, delete)
-5. Route lines connecting points per day (dashed blue line)
+## Features (all implemented)
+1. Auth — email/password + Google OAuth
+2. Create/manage trips
+3. Add days with optional summary
+4. Pin locations on Mapbox map (click, drag-to-reorder, delete)
+5. Dashed route lines per day
 6. Notes on locations (inline editor)
-7. AI-powered "suggest next location" (Mapbox Search API)
-8. Shareable read-only link — `/share/[token]` — map + itinerary, no login required
+7. AI "suggest next location" (Mapbox Search API)
+8. Shareable read-only link `/share/[token]` — map + itinerary
+9. Mobile-first responsive (map 45vh on mobile, side-by-side on desktop)
+10. Onboarding hints + 3-step guide for new users
+11. Map click fills destination field (city-level reverse geocode)
+12. Destination autocomplete with debounce
 
-## Production
-- Deployed on Vercel: https://trips-8sq6.vercel.app
-- Auto-deploys on every `git push origin main`
-- DB: Neon PostgreSQL (same instance as dev)
-- Google OAuth callback: `https://trips-8sq6.vercel.app/api/auth/callback/google`
-
-## Responsive / Mobile-first
-- Breakpoint: 768px
-- Mobile: map (45vh) stacked above scrollable sidebar
-- Desktop: map (flex: 1) side-by-side with 360px sidebar
-- Share page follows same pattern (40vh map on mobile)
-- All components are single-column and work at any width
-
-## Development Guidelines
-
-### Server Actions
-- Place all mutations in /app/actions
-- Always use 'use server' directive
-- Validate inputs with Zod
-- Return typed responses
-
-### Database Operations
-- Always use try/catch for Prisma operations
-- Handle errors gracefully
-- Use transactions for related operations
-- Include proper relations in queries
-
-### Map Integration
-- LocationPoint.orderIndex determines route line order
-- Day.dayNumber starts from 1
-- Update orderIndex when reordering points
-- Map uses react-map-gl v8 with Mapbox Streets style
+## Code Style
+- Function declarations only (`function foo()` not `const foo = () =>`)
+- Explicit TypeScript types, no `any`
+- No inline styles in JSX
+- BEM CSS class names
+- Mobile-first CSS (`@media (min-width: 768px)` for desktop)
+- Zod v4: use `.issues` not `.errors`
+- Build script: `prisma generate && next build`
 
 ## CURRENT_TASK.md convention
-
-The file uses two sections for discussion between user and Claude:
-
-```
-## User notes
-What you want to work on, questions, or tasks for Claude.
-
-## Claude notes
-Claude's response — status, suggestions, things you need to know.
-```
-
-Claude reads this at the start of every session. Update "User notes" with what you want next; Claude updates "Claude notes" with status and suggestions.
+- **User notes** — what to work on next
+- **Claude notes** — status, decisions, suggestions
+- Read at the start of every session

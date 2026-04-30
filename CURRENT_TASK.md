@@ -1,10 +1,8 @@
 ## User notes
 
-read claude.md allways before starting
+read claude.md always before starting
 
-1. I want to get more comprehensive user experience, suggest how to improve the ux, consider the user needs to be able to plan a trip, without necceserely previews knowladge.
-
-2. "I want to implement a multi-modal routing feature on the current map using Next.js and Mapbox. Please perform the following:
+I want to implement a multi-modal routing feature on the current map using Next.js and Mapbox. Please perform the following:
 
 Core Routing: Implement a navigation system that allows users to set a start and end point and visualize the route on the map.
 
@@ -16,30 +14,24 @@ UI/UX: Add a sleek, mobile-responsive selection menu to toggle between transport
 
 Environment Variables: Use the existing Mapbox Access Token from my .env.local file.
 
-Safety: Do not overwrite existing map logic; integrate this as a modular feature/component."
+Safety: Do not overwrite existing map logic; integrate this as a modular feature/component.
+
 
 ## Claude notes
 
-### סטטוס
-הכל בוצע. האפליקציה בפרודקשן: https://trips-8sq6.vercel.app
+### סטטוס — הכל עובד בפרודקשן
+https://trips-8sq6.vercel.app
 
-### מה נבנה (סיכום)
-1. מחיקת location/day ✅
-2. גרירה לסידור מחדש ✅
-3. Authentication (email/password + Google OAuth) ✅
-4. Notes על locations ✅
-5. Shareable link (`/share/[token]`) ✅
-6. Mobile-first responsive layout ✅
-7. Deploy ל-Vercel ✅
+### שינויים אחרונים שלא נדחפו עדיין לgit
+- MapView: לחיצה על מיקום ברשימה → flyTo zoom 14 על המיקום עצמו
+- MapView: בחירת יום → fitBounds לכל המיקומים של אותו יום
+- MapView: לחיצה על מפה בלי יום → reverse geocode לרמת עיר/מדינה
+- TripForm: destination controlled + debounced autocomplete (Mapbox geocoding)
+- TripList: empty state עם 3 שלבים
+- הינטים ב-TripDetail ו-Sidebar שופרו
 
-### בביצוע עכשיו
-UX improvements (task 1):
-- Empty state ידידותי כשאין טיולים
-- Onboarding hints ברורים (צור טיול → בחר יום → לחץ מפה)
-- שיפור פלואו כללי למשתמש חדש
-
-### המלצות להמשך
-1. **Multi-modal routing** (task 2) — routes אמיתיות על כבישים עם Mapbox Directions API + toggle נהיגה/הליכה/אופניים
-2. **AI summaries** — כפתור "Generate day summary" עם Claude API
-3. **PWA** — התקנה על מובייל (manifest + service worker)
-4. **שיפור Google OAuth** — לפתוח את ה-OAuth consent screen לכולם
+### להמשך (לפי עדיפות)
+1. **Multi-modal routing** — routes אמיתיות על כבישים (Mapbox Directions API) + toggle נהיגה/הליכה/אופניים
+2. **AI summaries** — "Generate day summary" עם Claude API
+3. **PWA** — התקנה על מובייל
+4. **Google OAuth** — לפתוח לכולם (OAuth consent screen)

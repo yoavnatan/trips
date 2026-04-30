@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useEffect, useRef, useActionState } from 'react'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useRouter } from 'next/navigation'
 import Map, { Marker, Source, Layer, NavigationControl, Popup } from 'react-map-gl/mapbox'
 import type { MapRef } from 'react-map-gl/mapbox'
 import type { MapMouseEvent } from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom } from '@/lib/store'
+import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, mapClickedDestinationAtom } from '@/lib/store'
 import { addLocationPoint } from '@/app/actions/addLocationPoint'
 import { updateLocation } from '@/app/actions/updateLocation'
 import type { TripWithDaysAndLocations, ActionState, LocationPoint } from '@/types'
@@ -61,6 +61,26 @@ async function reverseGeocodeApi(lat: number, lng: number): Promise<string[]> {
   }
 }
 
+async function reverseGeocodeDestination(lat: number, lng: number): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json` +
+        `?access_token=${TOKEN}&types=place,region,country&language=en&limit=1`
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const feature = data.features?.[0]
+    if (!feature) return null
+
+    const city = feature.text as string
+    const context = (feature.context ?? []) as Array<{ id: string; text: string }>
+    const country = context.find((c) => c.id.startsWith('country'))?.text
+    return country ? `${city}, ${country}` : city
+  } catch {
+    return null
+  }
+}
+
 async function forwardGeocode(query: string): Promise<[number, number] | null> {
   try {
     const res = await fetch(
@@ -72,6 +92,23 @@ async function forwardGeocode(query: string): Promise<[number, number] | null> {
   } catch {
     return null
   }
+}
+
+function fitLocations(
+  mapRef: React.RefObject<MapRef | null>,
+  locs: Array<{ lat: number; lng: number }>
+): void {
+  if (locs.length === 0) return
+  if (locs.length === 1) {
+    mapRef.current?.flyTo({ center: [locs[0].lng, locs[0].lat], zoom: 14, duration: 900 })
+    return
+  }
+  const lngs = locs.map((l) => l.lng)
+  const lats = locs.map((l) => l.lat)
+  mapRef.current?.fitBounds(
+    [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+    { padding: 80, duration: 900, maxZoom: 15 }
+  )
 }
 
 interface MapViewProps {
@@ -94,6 +131,7 @@ export function MapView({ trips }: MapViewProps) {
   const selectedDayId = useAtomValue(selectedDayIdAtom)
   const [suggestedLocation, setSuggestedLocation] = useAtom(suggestedLocationAtom)
   const [focusedLocation, setFocusedLocation] = useAtom(focusedLocationAtom)
+  const setMapClickedDestination = useSetAtom(mapClickedDestinationAtom)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -107,8 +145,15 @@ export function MapView({ trips }: MapViewProps) {
   useEffect(() => { setPendingPoint(null) }, [selectedDayId])
 
   useEffect(() => {
+    if (!selectedDayId || !mounted || !currentDay) return
+    const locs = [...currentDay.locations].sort((a, b) => a.orderIndex - b.orderIndex)
+    if (locs.length === 0) return
+    fitLocations(mapRef, locs)
+  }, [selectedDayId, mounted]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (!focusedLocation || !mounted) return
-    mapRef.current?.flyTo({ center: [focusedLocation.lng, focusedLocation.lat], zoom: 15, duration: 1000 })
+    mapRef.current?.flyTo({ center: [focusedLocation.lng, focusedLocation.lat], zoom: 14, duration: 900 })
     setFocusedLocation(null)
   }, [focusedLocation, mounted]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -136,8 +181,13 @@ export function MapView({ trips }: MapViewProps) {
   }
 
   async function handleMapClick(e: MapMouseEvent) {
-    if (!selectedDayId) return
     const { lat, lng } = e.lngLat
+
+    if (!selectedDayId) {
+      const destination = await reverseGeocodeDestination(lat, lng)
+      if (destination) setMapClickedDestination(destination)
+      return
+    }
 
     // 1. Instantly read what's painted on the map (synchronous)
     const rendered = getNamesFromMap(mapRef, e.point)

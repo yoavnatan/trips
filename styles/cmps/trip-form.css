@@ -36,6 +36,47 @@
   border-color: #2563eb;
 }
 
+.trip-form__autocomplete {
+  position: relative;
+}
+
+.trip-form__suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-top: none;
+  border-radius: 0 0 0.375rem 0.375rem;
+  list-style: none;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.trip-form__suggestion {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  background: none;
+  border: none;
+  font-size: 0.8125rem;
+  color: #374151;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.trip-form__suggestion:last-child {
+  border-bottom: none;
+}
+
+.trip-form__suggestion:hover {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
 .trip-form__error {
   font-size: 0.8125rem;
   color: #dc2626;
