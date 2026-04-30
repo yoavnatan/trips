@@ -85,6 +85,14 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   const [deletingLocationId, setDeletingLocationId] = useState<string | null>(null)
   const [deletingDayId, setDeletingDayId] = useState<string | null>(null)
   const [confirmModal, setConfirmModal] = useState<ConfirmState | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  async function handleShare(): Promise<void> {
+    const url = `${window.location.origin}/share/${trip.shareToken}`
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   function handleDayClick(dayId: string): void {
     const nextId = dayId === selectedDayId ? null : dayId
@@ -152,7 +160,15 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
       </button>
 
       <div className="trip-detail__header">
-        <h2 className="trip-detail__title">{trip.title}</h2>
+        <div className="trip-detail__header-top">
+          <h2 className="trip-detail__title">{trip.title}</h2>
+          <button
+            className={`trip-detail__share-btn${copied ? ' trip-detail__share-btn--copied' : ''}`}
+            onClick={() => void handleShare()}
+          >
+            {copied ? 'Copied!' : 'Share'}
+          </button>
+        </div>
         <p className="trip-detail__destination">{trip.destination}</p>
       </div>
 

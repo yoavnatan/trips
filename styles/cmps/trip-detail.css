@@ -26,6 +26,37 @@
   border-bottom: 1px solid #e5e7eb;
 }
 
+.trip-detail__header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.trip-detail__share-btn {
+  padding: 0.3125rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 999px;
+  border: 1px solid #2563eb;
+  color: #2563eb;
+  background: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.trip-detail__share-btn:hover {
+  background: #eff6ff;
+}
+
+.trip-detail__share-btn--copied {
+  border-color: #16a34a;
+  color: #16a34a;
+  background: #f0fdf4;
+}
+
 .trip-detail__title {
   font-size: 1.125rem;
   font-weight: 700;

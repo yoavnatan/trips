@@ -3,6 +3,7 @@ export interface Trip {
   userId: string
   title: string
   destination: string
+  shareToken: string
   createdAt: Date
   updatedAt: Date
 }

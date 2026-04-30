@@ -23,8 +23,15 @@ The schema already has a notes field on LocationPoint. Tapping a marker could op
 
 5. Export / share trip
 A printable day-by-day itinerary (or shareable link) would make the app feel finished.
+(Done — shareable link via /share/[token]. Needs DB migration when Neon is reachable: run `npx prisma migrate dev --name add-share-token`) Done
 
 6. Configure mobile first attitude, update the claude.md accordingly, make the app fully responsive, yet keep it simple.
+
+at the end: 
+
+a. please write where you think is the best way to save tokens, the context file, explain in a clear way what is done till now, update the claude.md to update the file when needed so I could use you more efficieantly. 
+
+b. suggest here (claude notes) best way to continue. 
 
 
 ## Claude notes
