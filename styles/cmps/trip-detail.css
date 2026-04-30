@@ -150,6 +150,30 @@
   cursor: not-allowed;
 }
 
+.day-list__reorder-toggle {
+  padding: 0.2rem 0.4rem;
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  line-height: 1;
+  color: #9ca3af;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-right: 0.125rem;
+}
+
+.day-list__reorder-toggle:hover {
+  border-color: #9ca3af;
+  color: #374151;
+}
+
+.day-list__reorder-toggle--active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
 .day-list__item--active .day-list__header {
   background-color: #eff6ff;
 }
@@ -233,6 +257,7 @@
   display: flex;
   flex-direction: column;
 }
+
 
 .location-list__item {
   display: flex;

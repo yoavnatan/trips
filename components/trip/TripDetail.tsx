@@ -113,6 +113,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   const [deletingDayId, setDeletingDayId] = useState<string | null>(null)
   const [confirmModal, setConfirmModal] = useState<ConfirmState | null>(null)
   const [copied, setCopied] = useState(false)
+  const [reorderMode, setReorderMode] = useState(false)
 
   async function handleShare(): Promise<void> {
     const url = `${window.location.origin}/share/${trip.shareToken}`
@@ -126,6 +127,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
     setSelectedDayId(nextId)
     setSuggestions([])
     setSuggestingForDayId(null)
+    setReorderMode(false)
   }
 
   async function handleSuggest(dayId: string, lat: number, lng: number): Promise<void> {
@@ -240,6 +242,14 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                       </span>
                       <span className="day-list__chevron">{isOpen ? '▲' : '▼'}</span>
                     </button>
+                    {isOpen && locs.length >= 2 && (
+                      <button
+                        className={`day-list__reorder-toggle${reorderMode ? ' day-list__reorder-toggle--active' : ''}`}
+                        onClick={(e) => { e.stopPropagation(); setReorderMode((m) => !m) }}
+                      >
+                        {reorderMode ? '✓' : '↕'}
+                      </button>
+                    )}
                     <button
                       className="day-list__delete-day"
                       disabled={deletingDayId === day.id}
@@ -260,6 +270,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                         <SortableLocationList
                           locs={locs}
                           deletingLocationId={deletingLocationId}
+                          reorderMode={reorderMode}
                           onFocus={(loc) => setFocusedLocation({ lat: loc.lat, lng: loc.lng })}
                           onDelete={(loc) => handleDeleteLocation(loc.id, loc.name)}
                         />
@@ -329,8 +340,6 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   )
 }
 
-type SegmentInfo = { from: string; to: string; distance: string; duration: string; kind?: 'walk' | 'transit'; lines?: string[]; transitType?: string }
-type DayRouteResult = { geojson: RouteGeoJSON; segments: SegmentInfo[]; totalDistance: string; totalDuration: string }
 
 function fmtDuration(seconds: number): string {
   const mins = Math.round(seconds / 60)
@@ -412,91 +421,6 @@ async function fetchWalkRoute(from: { lat: number; lng: number }, to: { lat: num
   }
 }
 
-async function fetchTransitRoute(locs: LocationPoint[], token: string): Promise<DayRouteResult> {
-  const stops = await Promise.all(locs.map((l) => findNearestStop(l.lat, l.lng)))
-
-  const features: RouteGeoJSON['features'] = []
-  const segments: SegmentInfo[] = []
-  let totalDistKm = 0
-  let totalSecs = 0
-
-  for (let i = 0; i < locs.length - 1; i++) {
-    const fromLoc = locs[i]
-    const toLoc = locs[i + 1]
-    const fromStop = stops[i]
-    const toStop = stops[i + 1]
-
-    const [walkFrom, walkTo] = await Promise.all([
-      fromStop ? fetchWalkRoute(fromLoc, fromStop, token) : Promise.resolve(null),
-      toStop ? fetchWalkRoute(toStop, toLoc, token) : Promise.resolve(null),
-    ])
-
-    // Walk to departure stop — show available lines so user knows what they're catching
-    if (fromStop && walkFrom) {
-      features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: walkFrom.coordinates }, properties: { segmentType: 'walk' } })
-      segments.push({ from: fromLoc.name, to: fromStop.name, distance: formatDistance(walkFrom.distKm), duration: fmtDuration(walkFrom.durSecs), kind: 'walk', lines: fromStop.lines })
-      totalDistKm += walkFrom.distKm
-      totalSecs += walkFrom.durSecs
-    }
-
-    // Transit leg — estimated duration based on mode type and straight-line distance
-    const txFrom = fromStop ?? fromLoc
-    const txTo = toStop ?? toLoc
-    const txDistKm = haversineDistance(txFrom.lat, txFrom.lng, txTo.lat, txTo.lng)
-    const routeType = fromStop?.primaryRouteType ?? 'bus'
-    const txSecs = estimateTransitSecs(txDistKm, routeType)
-    features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[txFrom.lng, txFrom.lat], [txTo.lng, txTo.lat]] }, properties: { segmentType: 'transit' } })
-    segments.push({ from: txFrom === fromStop ? fromStop.name : fromLoc.name, to: txTo === toStop ? toStop!.name : toLoc.name, distance: formatDistance(txDistKm), duration: `~${fmtDuration(txSecs)}`, kind: 'transit', transitType: routeType })
-    totalDistKm += txDistKm
-    totalSecs += txSecs
-
-    // Walk from arrival stop to destination
-    if (toStop && walkTo) {
-      features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: walkTo.coordinates }, properties: { segmentType: 'walk' } })
-      segments.push({ from: toStop.name, to: toLoc.name, distance: formatDistance(walkTo.distKm), duration: fmtDuration(walkTo.durSecs), kind: 'walk' })
-      totalDistKm += walkTo.distKm
-      totalSecs += walkTo.durSecs
-    }
-  }
-
-  return { geojson: { type: 'FeatureCollection', features }, segments, totalDistance: formatDistance(totalDistKm), totalDuration: `~${fmtDuration(totalSecs)}` }
-}
-
-async function fetchDayRoute(locs: LocationPoint[], mode: TransportMode, token: string): Promise<DayRouteResult | null> {
-  if (mode === 'transit') return fetchTransitRoute(locs, token)
-
-  const coords = locs.map((l) => `${l.lng},${l.lat}`).join(';')
-  try {
-    const res = await fetch(
-      `https://api.mapbox.com/directions/v5/mapbox/${mode}/${encodeURIComponent(coords)}` +
-        `?access_token=${token}&geometries=geojson&overview=full`
-    )
-    if (!res.ok) return null
-    const data = await res.json()
-    const route = data.routes?.[0]
-    if (!route) return null
-
-    const legs = route.legs as Array<{ distance: number; duration: number }>
-    const segments: SegmentInfo[] = legs.map((leg, i) => ({
-      from: locs[i].name,
-      to: locs[i + 1].name,
-      distance: formatDistance(leg.distance / 1000),
-      duration: fmtDuration(leg.duration),
-    }))
-
-    return {
-      geojson: {
-        type: 'FeatureCollection',
-        features: [{ type: 'Feature', geometry: route.geometry as { type: 'LineString'; coordinates: number[][] }, properties: {} }],
-      },
-      segments,
-      totalDistance: formatDistance(route.distance / 1000),
-      totalDuration: fmtDuration(route.duration),
-    }
-  } catch {
-    return null
-  }
-}
 
 async function fetchSegmentRoute(
   from: LocationPoint,
@@ -823,11 +747,12 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
 interface SortableLocationListProps {
   locs: LocationPoint[]
   deletingLocationId: string | null
+  reorderMode: boolean
   onFocus: (loc: LocationPoint) => void
   onDelete: (loc: LocationPoint) => void
 }
 
-function SortableLocationList({ locs, deletingLocationId, onFocus, onDelete }: SortableLocationListProps) {
+function SortableLocationList({ locs, deletingLocationId, reorderMode, onFocus, onDelete }: SortableLocationListProps) {
   const router = useRouter()
   const [items, setItems] = useState<LocationPoint[]>(locs)
   const [reorderError, setReorderError] = useState<string | null>(null)
@@ -880,6 +805,7 @@ function SortableLocationList({ locs, deletingLocationId, onFocus, onDelete }: S
                 nextLoc={i < items.length - 1 ? items[i + 1] : null}
                 distToNext={i < items.length - 1 ? segDists[i] : null}
                 isDeleting={deletingLocationId === loc.id}
+                reorderMode={reorderMode}
                 onFocus={() => onFocus(loc)}
                 onDelete={() => onDelete(loc)}
               />
@@ -897,11 +823,12 @@ interface SortableLocationItemProps {
   nextLoc: LocationPoint | null
   distToNext: number | null
   isDeleting: boolean
+  reorderMode: boolean
   onFocus: () => void
   onDelete: () => void
 }
 
-function SortableLocationItem({ loc, nextLoc, distToNext, isDeleting, onFocus, onDelete }: SortableLocationItemProps) {
+function SortableLocationItem({ loc, nextLoc, distToNext, isDeleting, reorderMode, onFocus, onDelete }: SortableLocationItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: loc.id })
   const [notesOpen, setNotesOpen] = useState(false)
   const [segmentOpen, setSegmentOpen] = useState(false)
@@ -921,9 +848,11 @@ function SortableLocationItem({ loc, nextLoc, distToNext, isDeleting, onFocus, o
   return (
     <li ref={setNodeRef} style={style} className="location-list__item">
       <div className="location-list__row">
-        <span className="location-list__drag-handle" {...attributes} {...listeners} title="Drag to reorder">
-          ⠿
-        </span>
+        {reorderMode && (
+          <span className="location-list__drag-handle" {...attributes} {...listeners} title="Drag to reorder">
+            ⠿
+          </span>
+        )}
         <div className="location-list__name-block">
           <button className="location-list__name" onClick={onFocus}>
             {loc.name}

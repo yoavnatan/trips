@@ -119,6 +119,13 @@ Shows "Day X selected — click the map to add a location" when a day is open
 - Renders as a color-coded pill in `day-list__meta`: green=easy, amber=moderate, red=hard
 - CSS classes: `.day-list__difficulty`, `.day-list__difficulty--easy/moderate/hard`
 
+### Reorder toggle (TripDetail.tsx)
+- Drag handles are hidden by default
+- A `↕` icon button appears in `day-list__header-row` when the day is open and has ≥ 2 locations
+- Clicking toggles `reorderMode` (state in `TripDetail`, passed down as prop) — button shows `✓` when active, border turns blue
+- `reorderMode` resets to false when the user opens a different day (`handleDayClick`)
+- CSS: `.day-list__reorder-toggle`, `.day-list__reorder-toggle--active`
+
 ### Route pill button (between locations)
 - Pill-shaped button: `{modeIcon} {distance} · {duration} ▼`
 - Shows actual route distance from `segmentSummaryAtom`, falls back to haversine `≈ X km` while loading
@@ -153,7 +160,7 @@ Shows "Day X selected — click the map to add a location" when a day is open
 1. Auth — email/password + Google OAuth
 2. Create/manage trips
 3. Add days with optional summary
-4. Pin locations on Mapbox map (click, drag-to-reorder, delete)
+4. Pin locations on Mapbox map (click, reorder via toggle, delete)
 5. Dashed route lines per day
 6. Notes on locations (inline editor)
 7. AI "suggest next location" (Mapbox Search API)
