@@ -76,11 +76,15 @@ model LocationPoint {
 
 ## Jotai Store — lib/store.ts
 ```ts
-selectedTripAtom          // Trip | null — currently open trip
-selectedDayIdAtom         // string | null — currently open day
-suggestedLocationAtom     // SuggestedLocation | null — AI suggestion to add
-focusedLocationAtom       // {lat, lng} | null — fly map to this point
+selectedTripAtom      // Trip | null — currently open trip
+selectedDayIdAtom     // string | null — currently open day
+suggestedLocationAtom // SuggestedLocation | null — AI suggestion to add
+focusedLocationAtom   // {lat, lng} | null — fly map to this point
 mapClickedDestinationAtom // string | null — city name from map click → fills TripForm
+routeModeAtom         // TransportMode — kept for MapView compat (legacy)
+dayRouteGeoJSONAtom   // RouteGeoJSON | null — combined GeoJSON for all day segments
+segmentModesAtom      // Record<string, TransportMode> — mode per segment key "${fromId}-${toId}"
+segmentSummaryAtom    // Record<string, {distance, duration}> — actual route info per segment (written by DayRoute, read by location list)
 ```
 
 ## Key Patterns
@@ -99,6 +103,27 @@ Controlled input with 300ms debounced Mapbox forward geocode autocomplete (`type
 
 ### Map hint
 Shows "Day X selected — click the map to add a location" when a day is open
+
+### Multi-modal per-segment routing (TripDetail.tsx)
+- `DayRoute` component: visual timeline below locations. Fetches all 4 modes for every segment pair in parallel on day open.
+- Smart default via `suggestMode(distKm)`: <1.5km→walk, 1.5-25km→transit, >25km→drive
+- User choices stored in `segmentModesAtom` (key=`${fromId}-${toId}`); never overwritten once set
+- Transit: `straightLineTransitResult()` sets an instant straight-line GeoJSON; `fetchSegmentTransit()` upgrades it with walk→stop→transit→stop→walk using Overpass API (finds nearest stop) + Mapbox walking
+- MapView colors each segment by its `mode` property using Mapbox data-driven styling: `['match', ['get', 'mode'], ...]`
+- `DayRoute` writes fetched distances to `segmentSummaryAtom` → location list pills read from it to show actual route distance
+
+### Day difficulty badge (TripDetail.tsx)
+- `computeDayDifficulty(locs, segmentModes)` — scores each segment: walking/cycling = "active" km, driving/transit = ignored
+- Thresholds: hard = activeKm > 8 OR totalKm > 50; moderate = activeKm > 3 OR totalKm > 15; easy = rest; null if < 2 locations
+- Falls back to `suggestMode(distKm)` for segments where the user hasn't chosen a mode yet (i.e. unopened days)
+- Renders as a color-coded pill in `day-list__meta`: green=easy, amber=moderate, red=hard
+- CSS classes: `.day-list__difficulty`, `.day-list__difficulty--easy/moderate/hard`
+
+### Route pill button (between locations)
+- Pill-shaped button: `{modeIcon} {distance} · {duration} ▼`
+- Shows actual route distance from `segmentSummaryAtom`, falls back to haversine `≈ X km` while loading
+- Clicking opens `SegmentRoutePanel`: 4 mode cards fetched in parallel, all visible simultaneously
+- Selecting a mode updates `segmentModesAtom` → DayRoute and map update reactively
 
 ## Folder Structure
 ```
@@ -137,6 +162,8 @@ Shows "Day X selected — click the map to add a location" when a day is open
 10. Onboarding hints + 3-step guide for new users
 11. Map click fills destination field (city-level reverse geocode)
 12. Destination autocomplete with debounce
+13. Multi-modal per-segment routing — walk/cycle/drive/transit per leg, visual timeline, smart defaults, transit with walk-to-stop legs
+14. Day difficulty badge — easy/moderate/hard pill shown in the day header, computed from haversine distances + transport modes
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)

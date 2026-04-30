@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useActionState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAtom, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   DndContext,
   PointerSensor,
@@ -19,7 +19,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, segmentModesAtom, dayRouteGeoJSONAtom } from '@/lib/store'
+import { selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, segmentModesAtom, segmentSummaryAtom, dayRouteGeoJSONAtom } from '@/lib/store'
 import { addDay } from '@/app/actions/addDay'
 import { deleteLocation } from '@/app/actions/deleteLocation'
 import { deleteDay } from '@/app/actions/deleteDay'
@@ -102,6 +102,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   const router = useRouter()
   const [state, formAction, pending] = useActionState(addDay, initialState)
   const [selectedDayId, setSelectedDayId] = useAtom(selectedDayIdAtom)
+  const segmentModes = useAtomValue(segmentModesAtom)
   const setSuggestedLocation = useSetAtom(suggestedLocationAtom)
   const setFocusedLocation = useSetAtom(focusedLocationAtom)
   const [suggestions, setSuggestions] = useState<SuggestedLocation[]>([])
@@ -217,6 +218,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
               }
 
               const lastLoc = locs[locs.length - 1]
+              const difficulty = computeDayDifficulty(locs, segmentModes)
 
               return (
                 <li key={day.id} className={`day-list__item${isOpen ? ' day-list__item--active' : ''}`}>
@@ -229,6 +231,11 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                         </span>
                         {locs.length > 1 && (
                           <span className="day-list__total-dist">{formatDistance(totalDist)}</span>
+                        )}
+                        {difficulty && (
+                          <span className={`day-list__difficulty day-list__difficulty--${difficulty}`}>
+                            {difficulty}
+                          </span>
                         )}
                       </span>
                       <span className="day-list__chevron">{isOpen ? '▲' : '▼'}</span>
@@ -538,6 +545,29 @@ type SegResult = {
   transitLines?: string[]
 } | null | 'loading'
 
+function computeDayDifficulty(locs: LocationPoint[], segmentModes: Record<string, TransportMode>): 'easy' | 'moderate' | 'hard' | null {
+  if (locs.length < 2) return null
+  let activeKm = 0
+  let totalKm = 0
+  for (let i = 0; i < locs.length - 1; i++) {
+    const from = locs[i]
+    const to = locs[i + 1]
+    const distKm = haversineDistance(from.lat, from.lng, to.lat, to.lng)
+    const mode = segmentModes[`${from.id}-${to.id}`] ?? suggestMode(distKm)
+    totalKm += distKm
+    if (mode === 'walking' || mode === 'cycling') activeKm += distKm
+  }
+  if (activeKm > 8 || totalKm > 50) return 'hard'
+  if (activeKm > 3 || totalKm > 15) return 'moderate'
+  return 'easy'
+}
+
+function suggestMode(distKm: number): TransportMode {
+  if (distKm < 1.5) return 'walking'   // comfortable on foot (~18 min)
+  if (distKm < 25) return 'transit'    // city range → public transport
+  return 'driving'
+}
+
 function straightLineTransitResult(from: LocationPoint, to: LocationPoint): SegResult {
   const distKm = haversineDistance(from.lat, from.lng, to.lat, to.lng)
   const durSecs = estimateTransitSecs(distKm, 'bus')
@@ -660,6 +690,7 @@ function SegmentRoutePanel({ from, to }: { from: LocationPoint; to: LocationPoin
 function DayRoute({ locs }: { locs: LocationPoint[] }) {
   const [segmentModes, setSegmentModes] = useAtom(segmentModesAtom)
   const setDayRouteGeoJSON = useSetAtom(dayRouteGeoJSONAtom)
+  const setSegmentSummary = useSetAtom(segmentSummaryAtom)
   const [allData, setAllData] = useState<Record<string, Record<TransportMode, SegResult>>>({})
 
   const pairs = useMemo(
@@ -669,6 +700,17 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
   const coordsKey = useMemo(() => locs.map((l) => `${l.lat},${l.lng}`).join(';'), [locs])
 
   useEffect(() => {
+    // Set suggested mode for any segment the user hasn't explicitly chosen
+    setSegmentModes((prev) => {
+      const updates: Record<string, TransportMode> = {}
+      for (const { from, to, key } of pairs) {
+        if (!(key in prev)) {
+          updates[key] = suggestMode(haversineDistance(from.lat, from.lng, to.lat, to.lng))
+        }
+      }
+      return Object.keys(updates).length > 0 ? { ...prev, ...updates } : prev
+    })
+
     const init: Record<string, Record<TransportMode, SegResult>> = {}
     for (const { from, to, key } of pairs) {
       init[key] = { driving: 'loading', walking: 'loading', cycling: 'loading', transit: straightLineTransitResult(from, to) }
@@ -687,17 +729,22 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
     }
   }, [coordsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Combine all selected segments' GeoJSONs for the map
+  // Combine selected segments' GeoJSONs for the map + sync summaries for the location list
   useEffect(() => {
     const features: RouteGeoJSON['features'] = []
+    const summaries: Record<string, { distance: string; duration: string }> = {}
     for (const { key } of pairs) {
       const mode = segmentModes[key] ?? 'walking'
       const data = allData[key]?.[mode]
-      if (data && data !== 'loading' && data.geojson) {
-        features.push(...data.geojson.features)
+      if (data && data !== 'loading') {
+        if (data.geojson) features.push(...data.geojson.features)
+        summaries[key] = { distance: data.distance, duration: data.duration }
       }
     }
     setDayRouteGeoJSON(features.length > 0 ? { type: 'FeatureCollection', features } : null)
+    if (Object.keys(summaries).length > 0) {
+      setSegmentSummary((prev) => ({ ...prev, ...summaries }))
+    }
   }, [segmentModes, allData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -858,6 +905,12 @@ function SortableLocationItem({ loc, nextLoc, distToNext, isDeleting, onFocus, o
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: loc.id })
   const [notesOpen, setNotesOpen] = useState(false)
   const [segmentOpen, setSegmentOpen] = useState(false)
+  const segmentModeValues = useAtomValue(segmentModesAtom)
+  const segmentSummaries = useAtomValue(segmentSummaryAtom)
+
+  const segKey = nextLoc ? `${loc.id}-${nextLoc.id}` : null
+  const activeMode = segKey ? (segmentModeValues[segKey] ?? 'walking') : null
+  const routeSummary = segKey ? (segmentSummaries[segKey] ?? null) : null
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -896,13 +949,19 @@ function SortableLocationItem({ loc, nextLoc, distToNext, isDeleting, onFocus, o
       {notesOpen && (
         <LocationNotesEditor loc={loc} onClose={() => setNotesOpen(false)} />
       )}
-      {distToNext !== null && nextLoc && (
+      {distToNext !== null && nextLoc && activeMode && (
         <>
           <button
-            className={`location-list__dist${segmentOpen ? ' location-list__dist--open' : ''}`}
+            className={`location-list__route-btn${segmentOpen ? ' location-list__route-btn--open' : ''}`}
             onClick={() => setSegmentOpen((o) => !o)}
           >
-            ↓ {formatDistance(distToNext)}
+            <span className="location-list__route-icon">{MODE_ICONS[activeMode]}</span>
+            <span className="location-list__route-info">
+              {routeSummary
+                ? `${routeSummary.distance} · ${routeSummary.duration}`
+                : `≈ ${formatDistance(distToNext)}`}
+            </span>
+            <span className="location-list__route-chevron">{segmentOpen ? '▲' : '▼'}</span>
           </button>
           {segmentOpen && <SegmentRoutePanel from={loc} to={nextLoc} />}
         </>

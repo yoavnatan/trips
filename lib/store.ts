@@ -9,3 +9,5 @@ export const mapClickedDestinationAtom = atom<string | null>(null)
 export const routeModeAtom = atom<TransportMode>('driving')
 export const dayRouteGeoJSONAtom = atom<RouteGeoJSON | null>(null)
 export const segmentModesAtom = atom<Record<string, TransportMode>>({})
+export const segmentSummaryAtom = atom<Record<string, { distance: string; duration: string }>>({})
+
