@@ -12,7 +12,25 @@ export function TripList({ trips }: TripListProps) {
   const [selectedTrip, setSelectedTrip] = useAtom(selectedTripAtom)
 
   if (trips.length === 0) {
-    return <p className="trip-list__empty">No trips yet — create one above!</p>
+    return (
+      <div className="trip-list__welcome">
+        <p className="trip-list__welcome-lead">How it works:</p>
+        <ol className="trip-list__steps">
+          <li className="trip-list__step">
+            <span className="trip-list__step-num">1</span>
+            <span>Create a trip using the form above</span>
+          </li>
+          <li className="trip-list__step">
+            <span className="trip-list__step-num">2</span>
+            <span>Add days to structure your itinerary</span>
+          </li>
+          <li className="trip-list__step">
+            <span className="trip-list__step-num">3</span>
+            <span>Click the map to pin locations for each day</span>
+          </li>
+        </ol>
+      </div>
+    )
   }
 
   return (

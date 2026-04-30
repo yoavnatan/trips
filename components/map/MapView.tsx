@@ -156,8 +156,10 @@ export function MapView({ trips }: MapViewProps) {
 
   return (
     <div className="map-view">
-      {selectedDayId && (
-        <div className="map-view__hint">Click the map to add a location</div>
+      {selectedDayId && currentDay && (
+        <div className="map-view__hint">
+          Day {currentDay.dayNumber} selected — click the map to add a location
+        </div>
       )}
       {mounted && (
         <Map

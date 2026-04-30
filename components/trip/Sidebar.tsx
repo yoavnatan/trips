@@ -43,7 +43,7 @@ export function Sidebar({ trips, user }: SidebarProps) {
         </div>
       ) : (
         <div className="sidebar-guest">
-          <p className="sidebar-guest__text">Sign in to plan and save trips.</p>
+          <p className="sidebar-guest__text">Plan trips day by day, pin locations on the map, and share your itinerary.</p>
           <button className="sidebar-guest__btn" onClick={() => setShowAuth(true)}>
             Sign in / Register
           </button>

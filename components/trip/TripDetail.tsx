@@ -175,7 +175,10 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
       <div className="trip-detail__days">
         <h3 className="trip-detail__days-heading">Days</h3>
         {trip.days.length === 0 ? (
-          <p className="trip-detail__empty">No days yet — add one below.</p>
+          <div className="trip-detail__empty">
+            <p>No days yet.</p>
+            <p className="trip-detail__empty-hint">Add your first day below, then click the map to drop location pins.</p>
+          </div>
         ) : (
           <ul className="day-list">
             {trip.days.map((day) => {
@@ -219,7 +222,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                       {day.summary && <p className="day-list__summary">{day.summary}</p>}
 
                       {locs.length === 0 ? (
-                        <p className="day-list__hint">Click the map to add locations</p>
+                        <p className="day-list__hint">👆 Click anywhere on the map to add your first location</p>
                       ) : (
                         <SortableLocationList
                           locs={locs}
@@ -255,7 +258,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                         </div>
                       )}
 
-                      <p className="day-list__hint">Click the map to add a location</p>
+                      <p className="day-list__hint">Click the map to add another location</p>
                     </div>
                   )}
                 </li>
