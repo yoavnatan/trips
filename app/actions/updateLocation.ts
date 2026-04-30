@@ -17,7 +17,7 @@ export async function updateLocation(_prev: ActionState, formData: FormData): Pr
     name: formData.get('name'),
     notes: formData.get('notes'),
   })
-  if (!parsed.success) return { error: parsed.error.errors[0].message }
+  if (!parsed.success) return { error: parsed.error.issues[0].message }
 
   try {
     await prisma.locationPoint.update({
