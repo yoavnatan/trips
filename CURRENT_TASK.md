@@ -2,7 +2,11 @@
 
 read claude.md always before starting.
 save usage in terms of claude tokens.
-don't waste all the tokens in 30 minutes!
+don't waste all the tokens in once, work smart!
+you can edit the code automatically.
+
+
+
 
 ## Claude notes
 

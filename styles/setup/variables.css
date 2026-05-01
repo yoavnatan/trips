@@ -1,8 +1,56 @@
 :root {
+  /* Page */
   --background: #ffffff;
   --foreground: #171717;
-  --font-sans: Arial, Helvetica, sans-serif;
+
+  /* Typography — overridden by next/font class on <html> */
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+
+  /* Breakpoints */
   --breakpoint-md: 768px;
+
+  /* Primary blue */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: #eff6ff;
+  --color-primary-border: #93c5fd;
+
+  /* Neutral */
+  --color-white: #ffffff;
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-700: #374151;
+  --color-gray-900: #111827;
+
+  /* Success / green */
+  --color-success: #16a34a;
+  --color-success-hover: #15803d;
+  --color-success-light: #dcfce7;
+  --color-success-bg: #f0fdf4;
+  --color-success-border: #bbf7d0;
+  --color-success-text: #166534;
+
+  /* Error / red */
+  --color-error: #dc2626;
+  --color-error-hover: #b91c1c;
+  --color-error-light: #fee2e2;
+
+  /* Warning / amber */
+  --color-warning-light: #fef9c3;
+  --color-warning: #a16207;
+
+  /* Transit / violet */
+  --color-transit: #7c3aed;
+  --color-transit-light: #ede9fe;
+  --color-transit-dark: #5b21b6;
+
+  /* Overlays */
+  --color-overlay: rgba(0, 0, 0, 0.45);
+  --color-overlay-dark: rgba(0, 0, 0, 0.65);
 }
 
 @media (prefers-color-scheme: dark) {

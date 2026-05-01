@@ -3,11 +3,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f9fafb;
+  background: var(--color-gray-50);
 }
 
 .login-card {
-  background: #fff;
+  background: var(--color-white);
   border-radius: 1rem;
   padding: 3rem 2.5rem;
   width: min(400px, 90vw);
@@ -22,12 +22,12 @@
 .login-card__title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #111827;
+  color: var(--color-gray-900);
 }
 
 .login-card__sub {
   font-size: 0.9375rem;
-  color: #6b7280;
+  color: var(--color-gray-500);
   margin-bottom: 0.75rem;
 }
 
@@ -36,19 +36,19 @@
   align-items: center;
   gap: 0.625rem;
   padding: 0.75rem 1.5rem;
-  background: #fff;
-  border: 1px solid #d1d5db;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-300);
   border-radius: 0.5rem;
   font-size: 0.9375rem;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-gray-700);
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
   transition: box-shadow 0.15s, border-color 0.15s;
 }
 
 .login-card__btn:hover {
-  border-color: #9ca3af;
+  border-color: var(--color-gray-400);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
@@ -65,20 +65,20 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.875rem 1rem;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f9fafb;
+  border-bottom: 1px solid var(--color-gray-200);
+  background: var(--color-gray-50);
 }
 
 .sidebar-guest__text {
   font-size: 0.8125rem;
-  color: #6b7280;
+  color: var(--color-gray-500);
   flex: 1;
 }
 
 .sidebar-guest__btn {
   padding: 0.375rem 0.875rem;
-  background: #2563eb;
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--color-white);
   border: none;
   border-radius: 0.375rem;
   font-size: 0.8125rem;
@@ -89,7 +89,7 @@
 }
 
 .sidebar-guest__btn:hover {
-  background: #1d4ed8;
+  background: var(--color-primary-hover);
 }
 
 /* Sidebar user strip */
@@ -99,7 +99,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-gray-200);
 }
 
 .sidebar-user__avatar {
@@ -113,7 +113,7 @@
 .sidebar-user__name {
   font-size: 0.8125rem;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-gray-700);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -124,7 +124,7 @@
   background: none;
   border: none;
   font-size: 0.75rem;
-  color: #9ca3af;
+  color: var(--color-gray-400);
   cursor: pointer;
   padding: 0;
   white-space: nowrap;
@@ -132,5 +132,5 @@
 }
 
 .sidebar-user__signout:hover {
-  color: #374151;
+  color: var(--color-gray-700);
 }

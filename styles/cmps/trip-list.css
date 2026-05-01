@@ -7,7 +7,7 @@
 
 .trip-list__empty {
   font-size: 0.875rem;
-  color: #9ca3af;
+  color: var(--color-gray-400);
 }
 
 .trip-list__welcome {
@@ -22,7 +22,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #9ca3af;
+  color: var(--color-gray-400);
 }
 
 .trip-list__steps {
@@ -37,14 +37,14 @@
   align-items: center;
   gap: 0.625rem;
   font-size: 0.8125rem;
-  color: #374151;
+  color: var(--color-gray-700);
 }
 
 .trip-list__step-num {
   width: 1.375rem;
   height: 1.375rem;
-  background: #eff6ff;
-  color: #2563eb;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
   border-radius: 50%;
   font-size: 0.6875rem;
   font-weight: 700;
@@ -56,19 +56,19 @@
 
 .trip-list__item {
   padding: 0.75rem 1rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-gray-200);
   border-radius: 0.5rem;
   cursor: pointer;
   transition: border-color 0.15s, background-color 0.15s;
 }
 
 .trip-list__item:hover {
-  border-color: #93c5fd;
+  border-color: var(--color-primary-border);
 }
 
 .trip-list__item--active {
-  border-color: #2563eb;
-  background-color: #eff6ff;
+  border-color: var(--color-primary);
+  background-color: var(--color-primary-light);
 }
 
 .trip-list__name {
@@ -78,6 +78,6 @@
 
 .trip-list__destination {
   font-size: 0.8125rem;
-  color: #6b7280;
+  color: var(--color-gray-500);
   margin-top: 0.125rem;
 }

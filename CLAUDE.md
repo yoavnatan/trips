@@ -150,7 +150,7 @@ Shows "Day X selected — click the map to add a location" when a day is open
 /types/index.ts
 /styles
   main.css
-  /setup — variables.css (has --breakpoint-md: 768px), reset.css
+  /setup — variables.css (full color system + --font-sans + --breakpoint-md), reset.css
   /basics — home.css (mobile-first layout), login.css
   /cmps — one file per component
 /prisma/schema.prisma
@@ -171,6 +171,9 @@ Shows "Day X selected — click the map to add a location" when a day is open
 12. Destination autocomplete with debounce
 13. Multi-modal per-segment routing — walk/cycle/drive/transit per leg, visual timeline, smart defaults, transit with walk-to-stop legs
 14. Day difficulty badge — easy/moderate/hard pill shown in the day header, computed from haversine distances + transport modes
+15. Reorder toggle for locations within a day (drag handles hidden by default, ↕ button reveals them)
+16. Full CSS variable system — all colors in `styles/setup/variables.css` (`--color-primary`, `--color-gray-*`, semantic colors for success/error/warning/transit, overlays)
+17. DM Sans font via `next/font/google` (weights 400/500/600/700), loaded in `app/layout.tsx` as `--font-sans` CSS variable
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)
