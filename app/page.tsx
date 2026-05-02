@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { MapView } from '@/components/map/MapView'
 import { Sidebar } from '@/components/trip/Sidebar'
+import { HomeLayout } from '@/components/HomeLayout'
 import type { TripWithDaysAndLocations } from '@/types'
 
 export default async function HomePage() {
@@ -31,11 +32,13 @@ export default async function HomePage() {
     : null
 
   return (
-    <main className="home-layout">
-      <div className="home-layout__map">
-        <MapView trips={trips} />
-      </div>
-      <Sidebar trips={trips} user={user} />
-    </main>
+    <HomeLayout
+      mapSlot={
+        <div className="home-layout__map">
+          <MapView trips={trips} />
+        </div>
+      }
+      sidebarSlot={<Sidebar trips={trips} user={user} />}
+    />
   )
 }

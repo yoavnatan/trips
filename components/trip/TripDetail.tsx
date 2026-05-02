@@ -802,6 +802,7 @@ function SortableLocationList({ locs, deletingLocationId, reorderMode, onFocus, 
               <SortableLocationItem
                 key={loc.id}
                 loc={loc}
+                index={i + 1}
                 nextLoc={i < items.length - 1 ? items[i + 1] : null}
                 distToNext={i < items.length - 1 ? segDists[i] : null}
                 isDeleting={deletingLocationId === loc.id}
@@ -820,6 +821,7 @@ function SortableLocationList({ locs, deletingLocationId, reorderMode, onFocus, 
 
 interface SortableLocationItemProps {
   loc: LocationPoint
+  index: number
   nextLoc: LocationPoint | null
   distToNext: number | null
   isDeleting: boolean
@@ -828,7 +830,7 @@ interface SortableLocationItemProps {
   onDelete: () => void
 }
 
-function SortableLocationItem({ loc, nextLoc, distToNext, isDeleting, reorderMode, onFocus, onDelete }: SortableLocationItemProps) {
+function SortableLocationItem({ loc, index, nextLoc, distToNext, isDeleting, reorderMode, onFocus, onDelete }: SortableLocationItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: loc.id })
   const [notesOpen, setNotesOpen] = useState(false)
   const [segmentOpen, setSegmentOpen] = useState(false)
@@ -848,10 +850,12 @@ function SortableLocationItem({ loc, nextLoc, distToNext, isDeleting, reorderMod
   return (
     <li ref={setNodeRef} style={style} className="location-list__item">
       <div className="location-list__row">
-        {reorderMode && (
+        {reorderMode ? (
           <span className="location-list__drag-handle" {...attributes} {...listeners} title="Drag to reorder">
             ⠿
           </span>
+        ) : (
+          <span className="location-list__num">{index}</span>
         )}
         <div className="location-list__name-block">
           <button className="location-list__name" onClick={onFocus}>
