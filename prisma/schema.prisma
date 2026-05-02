@@ -17,15 +17,17 @@ model User {
 }
 
 model Trip {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title       String
   destination String
-  shareToken  String   @unique @default(cuid())
+  shareToken  String    @unique @default(cuid())
+  startDate   DateTime?
+  endDate     DateTime?
   days        Day[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 model Day {

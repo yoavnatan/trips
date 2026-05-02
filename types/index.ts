@@ -4,6 +4,8 @@ export interface Trip {
   title: string
   destination: string
   shareToken: string
+  startDate: Date | null
+  endDate: Date | null
   createdAt: Date
   updatedAt: Date
 }

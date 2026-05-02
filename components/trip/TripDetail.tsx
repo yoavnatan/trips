@@ -19,12 +19,22 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import {
+  Car, Footprints, Bike, Bus, TramFront, Train, Ship,
+  ChevronDown, ChevronUp, ArrowUpDown, Check, X,
+  GripVertical, ArrowLeft, CalendarDays, Share2, MapPin, Navigation,
+  MoreVertical, Trash2,
+} from 'lucide-react'
+import { DayPicker } from 'react-day-picker'
+import type { DateRange } from 'react-day-picker'
+import 'react-day-picker/src/style.css'
 import { selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, segmentModesAtom, segmentSummaryAtom, dayRouteGeoJSONAtom } from '@/lib/store'
 import { addDay } from '@/app/actions/addDay'
 import { deleteLocation } from '@/app/actions/deleteLocation'
 import { deleteDay } from '@/app/actions/deleteDay'
 import { reorderLocations } from '@/app/actions/reorderLocations'
 import { updateLocation } from '@/app/actions/updateLocation'
+import { updateTrip } from '@/app/actions/updateTrip'
 import { haversineDistance, formatDistance } from '@/lib/utils'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import type { TripWithDaysAndLocations, ActionState, SuggestedLocation, LocationPoint, TransportMode, RouteGeoJSON } from '@/types'
@@ -36,13 +46,6 @@ interface ConfirmState {
 }
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
-
-const MODE_ICONS: Record<TransportMode, string> = {
-  driving: '🚗',
-  walking: '🚶',
-  cycling: '🚲',
-  transit: '🚌',
-}
 
 const MODE_LABELS: Record<TransportMode, string> = {
   driving: 'Drive',
@@ -57,10 +60,33 @@ const TRANSIT_TYPE_LABELS: Record<string, string> = {
   monorail: 'Monorail', light_rail: 'Light Rail',
 }
 
-const TRANSIT_TYPE_ICONS: Record<string, string> = {
-  bus: '🚌', tram: '🚋', subway: '🚇',
-  metro: '🚇', train: '🚆', ferry: '⛴️',
-  monorail: '🚝', light_rail: '🚊',
+function ModeIcon({ mode, size = 14 }: { mode: TransportMode; size?: number }) {
+  if (mode === 'driving') return <Car size={size} />
+  if (mode === 'walking') return <Footprints size={size} />
+  if (mode === 'cycling') return <Bike size={size} />
+  return <Bus size={size} />
+}
+
+function TransitTypeIcon({ type, size = 13 }: { type: string; size?: number }) {
+  if (type === 'tram') return <TramFront size={size} />
+  if (type === 'ferry') return <Ship size={size} />
+  if (type === 'train' || type === 'subway' || type === 'metro' || type === 'monorail' || type === 'light_rail')
+    return <Train size={size} />
+  return <Bus size={size} />
+}
+
+function formatTripDateRange(startDate: Date | null, endDate: Date | null): string | null {
+  if (!startDate) return null
+  const fmt = (d: Date) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (!endDate) return fmt(startDate)
+  const endYear = new Date(endDate).getFullYear()
+  return `${fmt(startDate)} – ${new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: endYear !== new Date(startDate).getFullYear() ? 'numeric' : undefined })}`
+}
+
+function getDayDate(startDate: Date, dayNumber: number): string {
+  const d = new Date(startDate)
+  d.setDate(d.getDate() + dayNumber - 1)
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 interface TripDetailProps {
@@ -114,6 +140,15 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   const [confirmModal, setConfirmModal] = useState<ConfirmState | null>(null)
   const [copied, setCopied] = useState(false)
   const [reorderMode, setReorderMode] = useState(false)
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [menuOpenDayId, setMenuOpenDayId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!menuOpenDayId) return
+    function handleOutsideClick() { setMenuOpenDayId(null) }
+    document.addEventListener('click', handleOutsideClick)
+    return () => document.removeEventListener('click', handleOutsideClick)
+  }, [menuOpenDayId])
 
   async function handleShare(): Promise<void> {
     const url = `${window.location.origin}/share/${trip.shareToken}`
@@ -128,6 +163,16 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
     setSuggestions([])
     setSuggestingForDayId(null)
     setReorderMode(false)
+  }
+
+  async function handleRangeSelect(range: DateRange | undefined): Promise<void> {
+    const result = await updateTrip(trip.id, range?.from ?? null, range?.to ?? null)
+    if (result.error) {
+      console.error('Date save failed:', result.error)
+      return
+    }
+    router.refresh()
+    if (range?.from && range?.to) setShowDatePicker(false)
   }
 
   async function handleSuggest(dayId: string, lat: number, lng: number): Promise<void> {
@@ -182,23 +227,51 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
     })
   }
 
+  const startDate = trip.startDate ? new Date(trip.startDate) : null
+  const endDate = trip.endDate ? new Date(trip.endDate) : null
+  const formattedDateRange = formatTripDateRange(startDate, endDate)
+
   return (
     <div className="trip-detail">
       <button className="trip-detail__back" onClick={onBack}>
-        ← Back
+        <ArrowLeft size={14} /> Back
       </button>
 
       <div className="trip-detail__header">
         <div className="trip-detail__header-top">
           <h2 className="trip-detail__title">{trip.title}</h2>
-          <button
-            className={`trip-detail__share-btn${copied ? ' trip-detail__share-btn--copied' : ''}`}
-            onClick={() => void handleShare()}
-          >
-            {copied ? 'Copied!' : 'Share'}
-          </button>
+          <div className="trip-detail__header-actions">
+            <button
+              className={`trip-detail__date-btn${showDatePicker ? ' trip-detail__date-btn--open' : ''}`}
+              onClick={() => setShowDatePicker((p) => !p)}
+              title="Set trip dates"
+            >
+              <CalendarDays size={14} />
+              <span>{formattedDateRange ?? 'Add dates'}</span>
+            </button>
+            <button
+              className={`trip-detail__share-btn${copied ? ' trip-detail__share-btn--copied' : ''}`}
+              onClick={() => void handleShare()}
+            >
+              {copied ? (
+                <><Check size={11} /> Copied!</>
+              ) : (
+                <><Share2 size={11} /> Share</>
+              )}
+            </button>
+          </div>
         </div>
         <p className="trip-detail__destination">{trip.destination}</p>
+
+        {showDatePicker && (
+          <div className="trip-detail__date-picker-wrap">
+            <DayPicker
+              mode="range"
+              selected={{ from: startDate ?? undefined, to: endDate ?? undefined }}
+              onSelect={(range) => void handleRangeSelect(range)}
+            />
+          </div>
+        )}
       </div>
 
       <div className="trip-detail__days">
@@ -221,12 +294,19 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
 
               const lastLoc = locs[locs.length - 1]
               const difficulty = computeDayDifficulty(locs, segmentModes)
+              const dayDate = startDate ? getDayDate(startDate, day.dayNumber) : null
 
               return (
                 <li key={day.id} className={`day-list__item${isOpen ? ' day-list__item--active' : ''}`}>
                   <div className="day-list__header-row">
                     <button className="day-list__header" onClick={() => handleDayClick(day.id)}>
-                      <span className="day-list__number">Day {day.dayNumber}</span>
+                      <span className="day-list__chevron">
+                        {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </span>
+                      <span className="day-list__number-col">
+                        <span className="day-list__number">Day {day.dayNumber}</span>
+                        {dayDate && <span className="day-list__date">{dayDate}</span>}
+                      </span>
                       <span className="day-list__meta">
                         <span className="day-list__count">
                           {locs.length} loc{locs.length !== 1 ? 's' : ''}
@@ -240,24 +320,37 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                           </span>
                         )}
                       </span>
-                      <span className="day-list__chevron">{isOpen ? '▲' : '▼'}</span>
                     </button>
-                    {isOpen && locs.length >= 2 && (
+                    <div className="day-list__menu">
                       <button
-                        className={`day-list__reorder-toggle${reorderMode ? ' day-list__reorder-toggle--active' : ''}`}
-                        onClick={(e) => { e.stopPropagation(); setReorderMode((m) => !m) }}
+                        className="day-list__menu-trigger"
+                        onClick={(e) => { e.stopPropagation(); setMenuOpenDayId(menuOpenDayId === day.id ? null : day.id) }}
+                        title="Day options"
                       >
-                        {reorderMode ? '✓' : '↕'}
+                        <MoreVertical size={15} />
                       </button>
-                    )}
-                    <button
-                      className="day-list__delete-day"
-                      disabled={deletingDayId === day.id}
-                      onClick={(e) => { e.stopPropagation(); handleDeleteDay(day.id, day.dayNumber, locs.length) }}
-                      title="Delete day"
-                    >
-                      ×
-                    </button>
+                      {menuOpenDayId === day.id && (
+                        <div className="day-list__menu-dropdown">
+                          {isOpen && locs.length >= 2 && (
+                            <button
+                              className={`day-list__menu-item${reorderMode ? ' day-list__menu-item--active' : ''}`}
+                              onClick={(e) => { e.stopPropagation(); setReorderMode((m) => !m); setMenuOpenDayId(null) }}
+                            >
+                              <ArrowUpDown size={13} />
+                              {reorderMode ? 'Stop reordering' : 'Reorder'}
+                            </button>
+                          )}
+                          <button
+                            className="day-list__menu-item day-list__menu-item--danger"
+                            disabled={deletingDayId === day.id}
+                            onClick={(e) => { e.stopPropagation(); setMenuOpenDayId(null); handleDeleteDay(day.id, day.dayNumber, locs.length) }}
+                          >
+                            <Trash2 size={13} />
+                            Delete day
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {isOpen && (
@@ -265,7 +358,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                       {day.summary && <p className="day-list__summary">{day.summary}</p>}
 
                       {locs.length === 0 ? (
-                        <p className="day-list__hint">👆 Click anywhere on the map to add your first location</p>
+                        <p className="day-list__hint">Click anywhere on the map to add your first location</p>
                       ) : (
                         <SortableLocationList
                           locs={locs}
@@ -361,7 +454,6 @@ type WalkResult = { coordinates: number[][]; distKm: number; durSecs: number }
 type OsmStopNode = { type: 'node'; id: number; lat: number; lon: number; tags?: Record<string, string> }
 type OsmRoute = { type: 'relation'; tags?: Record<string, string>; members: Array<{ type: string; ref: number }> }
 
-// Single Overpass query: nearby stops + transit lines + route types serving them.
 async function findNearestStop(lat: number, lng: number): Promise<TransitStop | null> {
   const query =
     `[out:json][timeout:12];` +
@@ -382,7 +474,6 @@ async function findNearestStop(lat: number, lng: number): Promise<TransitStop | 
     const routes = elements.filter((e): e is OsmRoute => e.type === 'relation')
     if (!nodes.length) return null
 
-    // Pick nearest stop
     let best = nodes[0]
     let bestDist = haversineDistance(lat, lng, best.lat, best.lon)
     for (const n of nodes.slice(1)) {
@@ -390,7 +481,6 @@ async function findNearestStop(lat: number, lng: number): Promise<TransitStop | 
       if (d < bestDist) { bestDist = d; best = n }
     }
 
-    // Routes serving this exact stop node
     const servingRoutes = routes.filter((r) => r.members.some((m) => m.type === 'node' && m.ref === best.id))
     const lines = servingRoutes.map((r) => r.tags?.ref ?? r.tags?.short_name).filter((s): s is string => Boolean(s)).slice(0, 6)
     const primaryRouteType = servingRoutes[0]?.tags?.route ?? 'bus'
@@ -487,8 +577,8 @@ function computeDayDifficulty(locs: LocationPoint[], segmentModes: Record<string
 }
 
 function suggestMode(distKm: number): TransportMode {
-  if (distKm < 1.5) return 'walking'   // comfortable on foot (~18 min)
-  if (distKm < 25) return 'transit'    // city range → public transport
+  if (distKm < 1.5) return 'walking'
+  if (distKm < 25) return 'transit'
   return 'driving'
 }
 
@@ -571,7 +661,6 @@ function SegmentRoutePanel({ from, to }: { from: LocationPoint; to: LocationPoin
         setResults((prev) => ({ ...prev, [m]: r }))
       })
     })
-    // Show straight-line estimate immediately, then upgrade with stop data
     setResults((prev) => ({ ...prev, transit: straightLineTransitResult(from, to) }))
     fetchSegmentTransit(from, to).then((r) => {
       setResults((prev) => ({ ...prev, transit: r }))
@@ -588,7 +677,7 @@ function SegmentRoutePanel({ from, to }: { from: LocationPoint; to: LocationPoin
             className={`segment-route__card${activeMode === m ? ' segment-route__card--active' : ''}`}
             onClick={() => setSegmentModes((prev) => ({ ...prev, [segKey]: m }))}
           >
-            <span className="segment-route__icon">{MODE_ICONS[m]}</span>
+            <span className="segment-route__icon"><ModeIcon mode={m} size={16} /></span>
             <span className="segment-route__label">{MODE_LABELS[m]}</span>
             {r === 'loading' ? (
               <span className="segment-route__meta">…</span>
@@ -596,7 +685,7 @@ function SegmentRoutePanel({ from, to }: { from: LocationPoint; to: LocationPoin
               <>
                 {m === 'transit' && r.transitType && (
                   <span className="segment-route__transit-type">
-                    {TRANSIT_TYPE_ICONS[r.transitType] ?? '🚌'} {TRANSIT_TYPE_LABELS[r.transitType] ?? r.transitType}
+                    <TransitTypeIcon type={r.transitType} size={11} /> {TRANSIT_TYPE_LABELS[r.transitType] ?? r.transitType}
                   </span>
                 )}
                 <span className="segment-route__meta">{r.distance} · {r.duration}</span>
@@ -624,7 +713,6 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
   const coordsKey = useMemo(() => locs.map((l) => `${l.lat},${l.lng}`).join(';'), [locs])
 
   useEffect(() => {
-    // Set suggested mode for any segment the user hasn't explicitly chosen
     setSegmentModes((prev) => {
       const updates: Record<string, TransportMode> = {}
       for (const { from, to, key } of pairs) {
@@ -653,7 +741,6 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
     }
   }, [coordsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Combine selected segments' GeoJSONs for the map + sync summaries for the location list
   useEffect(() => {
     const features: RouteGeoJSON['features'] = []
     const summaries: Record<string, { distance: string; duration: string }> = {}
@@ -688,60 +775,12 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
     return { distance: formatDistance(totalDistKm), duration: fmtDuration(totalDurSecs) }
   }, [pairs, segmentModes, allData])
 
-  return (
-    <div className="day-route">
-      {locs.map((loc, i) => {
-        const pair = pairs[i]
-        const mode = pair ? (segmentModes[pair.key] ?? 'walking') : null
-        const data = pair && mode ? allData[pair.key]?.[mode] : null
-
-        return (
-          <div key={loc.id} className="day-route__row">
-            <div className="day-route__stop">
-              <span className="day-route__stop-dot" />
-              <span className="day-route__stop-name">{loc.name}</span>
-            </div>
-            {pair && mode && (
-              <div className="day-route__leg">
-                <div className={`day-route__leg-line day-route__leg-line--${mode}`} />
-                <div className="day-route__leg-content">
-                  <div className="day-route__leg-modes">
-                    {(['driving', 'walking', 'cycling', 'transit'] as TransportMode[]).map((m) => (
-                      <button
-                        key={m}
-                        className={`day-route__leg-mode${mode === m ? ' day-route__leg-mode--active' : ''}`}
-                        onClick={() => setSegmentModes((prev) => ({ ...prev, [pair.key]: m }))}
-                        title={MODE_LABELS[m]}
-                      >
-                        {MODE_ICONS[m]}
-                      </button>
-                    ))}
-                  </div>
-                  <span className="day-route__leg-meta">
-                    {data === 'loading' ? '…' : data
-                      ? `${data.distance} · ${data.duration}${mode === 'transit' && data.transitType ? ` · ${TRANSIT_TYPE_LABELS[data.transitType] ?? data.transitType}` : ''}`
-                      : '—'}
-                  </span>
-                  {mode === 'transit' && data && data !== 'loading' && data.transitLines?.length ? (
-                    <div className="day-route__leg-transit-lines">
-                      {data.transitLines.map((l) => (
-                        <span key={l} className="day-route__leg-transit-badge">{l}</span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            )}
-          </div>
-        )
-      })}
-      {totals && (
-        <div className="day-route__total">
-          {totals.distance} · {totals.duration} total
-        </div>
-      )}
+  return totals ? (
+    <div className="day-route__total">
+      <Navigation size={12} />
+      {totals.distance} · {totals.duration} total
     </div>
-  )
+  ) : null
 }
 
 interface SortableLocationListProps {
@@ -759,7 +798,6 @@ function SortableLocationList({ locs, deletingLocationId, reorderMode, onFocus, 
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
-  // Sync with server data after refresh
   useEffect(() => { setItems(locs) }, [locs])
 
   const segDists = useMemo(() => {
@@ -779,7 +817,6 @@ function SortableLocationList({ locs, deletingLocationId, reorderMode, onFocus, 
     const reordered = arrayMove(items, oldIndex, newIndex)
     const original = items
 
-    // Optimistic update — move immediately
     setItems(reordered)
     setReorderError(null)
 
@@ -803,8 +840,8 @@ function SortableLocationList({ locs, deletingLocationId, reorderMode, onFocus, 
                 key={loc.id}
                 loc={loc}
                 index={i + 1}
-                nextLoc={i < items.length - 1 ? items[i + 1] : null}
-                distToNext={i < items.length - 1 ? segDists[i] : null}
+                prevLoc={i > 0 ? items[i - 1] : null}
+                distFromPrev={i > 0 ? segDists[i - 1] : null}
                 isDeleting={deletingLocationId === loc.id}
                 reorderMode={reorderMode}
                 onFocus={() => onFocus(loc)}
@@ -822,22 +859,23 @@ function SortableLocationList({ locs, deletingLocationId, reorderMode, onFocus, 
 interface SortableLocationItemProps {
   loc: LocationPoint
   index: number
-  nextLoc: LocationPoint | null
-  distToNext: number | null
+  prevLoc: LocationPoint | null
+  distFromPrev: number | null
   isDeleting: boolean
   reorderMode: boolean
   onFocus: () => void
   onDelete: () => void
 }
 
-function SortableLocationItem({ loc, index, nextLoc, distToNext, isDeleting, reorderMode, onFocus, onDelete }: SortableLocationItemProps) {
+function SortableLocationItem({ loc, index, prevLoc, distFromPrev, isDeleting, reorderMode, onFocus, onDelete }: SortableLocationItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: loc.id })
   const [notesOpen, setNotesOpen] = useState(false)
   const [segmentOpen, setSegmentOpen] = useState(false)
+  const [startingAddress, setStartingAddress] = useState('')
   const segmentModeValues = useAtomValue(segmentModesAtom)
   const segmentSummaries = useAtomValue(segmentSummaryAtom)
 
-  const segKey = nextLoc ? `${loc.id}-${nextLoc.id}` : null
+  const segKey = prevLoc ? `${prevLoc.id}-${loc.id}` : null
   const activeMode = segKey ? (segmentModeValues[segKey] ?? 'walking') : null
   const routeSummary = segKey ? (segmentSummaries[segKey] ?? null) : null
 
@@ -852,7 +890,7 @@ function SortableLocationItem({ loc, index, nextLoc, distToNext, isDeleting, reo
       <div className="location-list__row">
         {reorderMode ? (
           <span className="location-list__drag-handle" {...attributes} {...listeners} title="Drag to reorder">
-            ⠿
+            <GripVertical size={16} />
           </span>
         ) : (
           <span className="location-list__num">{index}</span>
@@ -876,27 +914,42 @@ function SortableLocationItem({ loc, index, nextLoc, distToNext, isDeleting, reo
           onClick={onDelete}
           title="Remove location"
         >
-          ×
+          <X size={13} />
         </button>
       </div>
       {notesOpen && (
         <LocationNotesEditor loc={loc} onClose={() => setNotesOpen(false)} />
       )}
-      {distToNext !== null && nextLoc && activeMode && (
+
+      {prevLoc === null && (
+        <div className="location-list__from">
+          <MapPin size={12} className="location-list__from-icon" />
+          <input
+            className="location-list__from-input"
+            placeholder="Starting from…"
+            value={startingAddress}
+            onChange={(e) => setStartingAddress(e.target.value)}
+          />
+        </div>
+      )}
+
+      {prevLoc !== null && distFromPrev !== null && activeMode && (
         <>
           <button
             className={`location-list__route-btn${segmentOpen ? ' location-list__route-btn--open' : ''}`}
             onClick={() => setSegmentOpen((o) => !o)}
           >
-            <span className="location-list__route-icon">{MODE_ICONS[activeMode]}</span>
+            <span className="location-list__route-icon"><ModeIcon mode={activeMode} size={13} /></span>
             <span className="location-list__route-info">
               {routeSummary
                 ? `${routeSummary.distance} · ${routeSummary.duration}`
-                : `≈ ${formatDistance(distToNext)}`}
+                : `≈ ${formatDistance(distFromPrev)}`}
             </span>
-            <span className="location-list__route-chevron">{segmentOpen ? '▲' : '▼'}</span>
+            <span className="location-list__route-chevron">
+              {segmentOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+            </span>
           </button>
-          {segmentOpen && <SegmentRoutePanel from={loc} to={nextLoc} />}
+          {segmentOpen && <SegmentRoutePanel from={prevLoc} to={loc} />}
         </>
       )}
     </li>
