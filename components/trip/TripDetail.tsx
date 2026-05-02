@@ -21,6 +21,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   Car, Footprints, Bike, Bus, TramFront, Train, Ship,
+  Plane, Clock,
   ChevronDown, ChevronUp, ArrowUpDown, Check, X,
   GripVertical, ArrowLeft, CalendarDays, Share2, MapPin, Navigation,
   MoreVertical, Trash2,
@@ -52,6 +53,8 @@ const MODE_LABELS: Record<TransportMode, string> = {
   walking: 'Walk',
   cycling: 'Cycle',
   transit: 'Transit',
+  ferry: 'Ferry',
+  flight: 'Flight',
 }
 
 const TRANSIT_TYPE_LABELS: Record<string, string> = {
@@ -64,6 +67,8 @@ function ModeIcon({ mode, size = 14 }: { mode: TransportMode; size?: number }) {
   if (mode === 'driving') return <Car size={size} />
   if (mode === 'walking') return <Footprints size={size} />
   if (mode === 'cycling') return <Bike size={size} />
+  if (mode === 'ferry') return <Ship size={size} />
+  if (mode === 'flight') return <Plane size={size} />
   return <Bus size={size} />
 }
 
@@ -579,7 +584,8 @@ function computeDayDifficulty(locs: LocationPoint[], segmentModes: Record<string
 function suggestMode(distKm: number): TransportMode {
   if (distKm < 1.5) return 'walking'
   if (distKm < 25) return 'transit'
-  return 'driving'
+  if (distKm < 300) return 'driving'
+  return 'flight'
 }
 
 function straightLineTransitResult(from: LocationPoint, to: LocationPoint): SegResult {
@@ -593,6 +599,58 @@ function straightLineTransitResult(from: LocationPoint, to: LocationPoint): SegR
     geojson: {
       type: 'FeatureCollection',
       features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [[from.lng, from.lat], [to.lng, to.lat]] }, properties: { mode: 'transit' } }],
+    },
+  }
+}
+
+async function checkFerryTerminals(lat1: number, lng1: number, lat2: number, lng2: number): Promise<boolean> {
+  const radius = 8000
+  const hasTerminal = async (lat: number, lng: number): Promise<boolean> => {
+    const q =
+      `[out:json][timeout:6];` +
+      `(node["amenity"="ferry_terminal"](around:${radius},${lat},${lng});` +
+      `way["amenity"="ferry_terminal"](around:${radius},${lat},${lng});` +
+      `rel["route"="ferry"](around:${radius},${lat},${lng});` +
+      `);out count;`
+    try {
+      const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: q })
+      if (!res.ok) return false
+      const data = await res.json() as { elements?: Array<{ tags?: { total?: string } }> }
+      return parseInt(data.elements?.[0]?.tags?.total ?? '0') > 0
+    } catch {
+      return false
+    }
+  }
+  const [a, b] = await Promise.all([hasTerminal(lat1, lng1), hasTerminal(lat2, lng2)])
+  return a && b
+}
+
+function straightLineFerryResult(from: LocationPoint, to: LocationPoint): SegResult {
+  const distKm = haversineDistance(from.lat, from.lng, to.lat, to.lng)
+  const durSecs = Math.round((distKm / 25) * 3600)
+  return {
+    distance: formatDistance(distKm),
+    duration: `~${fmtDuration(durSecs)}`,
+    distKm,
+    durSecs,
+    geojson: {
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [[from.lng, from.lat], [to.lng, to.lat]] }, properties: { mode: 'ferry' } }],
+    },
+  }
+}
+
+function straightLineFlightResult(from: LocationPoint, to: LocationPoint): SegResult {
+  const distKm = haversineDistance(from.lat, from.lng, to.lat, to.lng)
+  const durSecs = Math.round((distKm / 300) * 3600)
+  return {
+    distance: formatDistance(distKm),
+    duration: `~${fmtDuration(durSecs)}`,
+    distKm,
+    durSecs,
+    geojson: {
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [[from.lng, from.lat], [to.lng, to.lat]] }, properties: { mode: 'flight' } }],
     },
   }
 }
@@ -651,25 +709,41 @@ function SegmentRoutePanel({ from, to }: { from: LocationPoint; to: LocationPoin
   const segKey = `${from.id}-${to.id}`
   const [segmentModes, setSegmentModes] = useAtom(segmentModesAtom)
   const activeMode = segmentModes[segKey] ?? 'walking'
+  const distKm = haversineDistance(from.lat, from.lng, to.lat, to.lng)
+  const showFlight = distKm > 150 || activeMode === 'flight'
+  const [showFerry, setShowFerry] = useState(activeMode === 'ferry')
   const [results, setResults] = useState<Record<TransportMode, SegResult>>({
     driving: 'loading', walking: 'loading', cycling: 'loading', transit: 'loading',
+    ferry: straightLineFerryResult(from, to), flight: straightLineFlightResult(from, to),
   })
 
   useEffect(() => {
-    ;(['driving', 'walking', 'cycling'] as Array<Exclude<TransportMode, 'transit'>>).forEach((m) => {
+    ;(['driving', 'walking', 'cycling'] as Array<Exclude<TransportMode, 'transit' | 'ferry' | 'flight'>>).forEach((m) => {
       fetchSegmentRoute(from, to, m, TOKEN).then((r) => {
         setResults((prev) => ({ ...prev, [m]: r }))
       })
     })
-    setResults((prev) => ({ ...prev, transit: straightLineTransitResult(from, to) }))
+    setResults((prev) => ({
+      ...prev,
+      transit: straightLineTransitResult(from, to),
+      ferry: straightLineFerryResult(from, to),
+      flight: straightLineFlightResult(from, to),
+    }))
     fetchSegmentTransit(from, to).then((r) => {
       setResults((prev) => ({ ...prev, transit: r }))
     })
+    checkFerryTerminals(from.lat, from.lng, to.lat, to.lng).then((has) => {
+      if (has) setShowFerry(true)
+    })
   }, [from.id, to.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const visibleModes = (['driving', 'walking', 'cycling', 'transit'] as TransportMode[])
+    .concat(showFerry ? ['ferry' as TransportMode] : [])
+    .concat(showFlight ? ['flight' as TransportMode] : [])
 
   return (
     <div className="segment-route">
-      {(['driving', 'walking', 'cycling', 'transit'] as TransportMode[]).map((m) => {
+      {visibleModes.map((m) => {
         const r = results[m]
         return (
           <button
@@ -688,7 +762,10 @@ function SegmentRoutePanel({ from, to }: { from: LocationPoint; to: LocationPoin
                     <TransitTypeIcon type={r.transitType} size={11} /> {TRANSIT_TYPE_LABELS[r.transitType] ?? r.transitType}
                   </span>
                 )}
-                <span className="segment-route__meta">{r.distance} · {r.duration}</span>
+                <span className="segment-route__meta">
+                  {r.distance}
+                  <span className="segment-route__time"><Clock size={9} />{r.duration}</span>
+                </span>
               </>
             ) : (
               <span className="segment-route__meta">—</span>
@@ -725,12 +802,17 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
 
     const init: Record<string, Record<TransportMode, SegResult>> = {}
     for (const { from, to, key } of pairs) {
-      init[key] = { driving: 'loading', walking: 'loading', cycling: 'loading', transit: straightLineTransitResult(from, to) }
+      init[key] = {
+        driving: 'loading', walking: 'loading', cycling: 'loading',
+        transit: straightLineTransitResult(from, to),
+        ferry: straightLineFerryResult(from, to),
+        flight: straightLineFlightResult(from, to),
+      }
     }
     setAllData(init)
 
     for (const { from, to, key } of pairs) {
-      ;(['driving', 'walking', 'cycling'] as Array<Exclude<TransportMode, 'transit'>>).forEach((m) => {
+      ;(['driving', 'walking', 'cycling'] as Array<Exclude<TransportMode, 'transit' | 'ferry' | 'flight'>>).forEach((m) => {
         fetchSegmentRoute(from, to, m, TOKEN).then((r) => {
           setAllData((prev) => ({ ...prev, [key]: { ...prev[key], [m]: r } }))
         })
@@ -941,9 +1023,14 @@ function SortableLocationItem({ loc, index, prevLoc, distFromPrev, isDeleting, r
           >
             <span className="location-list__route-icon"><ModeIcon mode={activeMode} size={13} /></span>
             <span className="location-list__route-info">
-              {routeSummary
-                ? `${routeSummary.distance} · ${routeSummary.duration}`
-                : `≈ ${formatDistance(distFromPrev)}`}
+              {routeSummary ? (
+                <>
+                  {routeSummary.distance}
+                  <span className="location-list__route-time"><Clock size={11} />{routeSummary.duration}</span>
+                </>
+              ) : (
+                `≈ ${formatDistance(distFromPrev)}`
+              )}
             </span>
             <span className="location-list__route-chevron">
               {segmentOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}

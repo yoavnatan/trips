@@ -50,7 +50,7 @@ export interface SuggestedLocation {
   name: string
 }
 
-export type TransportMode = 'driving' | 'walking' | 'cycling' | 'transit'
+export type TransportMode = 'driving' | 'walking' | 'cycling' | 'transit' | 'ferry' | 'flight'
 
 export type RouteGeoJSON = {
   type: 'FeatureCollection'

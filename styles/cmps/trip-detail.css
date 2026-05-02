@@ -628,8 +628,17 @@
 }
 
 .location-list__route-info {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   font-weight: 500;
   white-space: nowrap;
+}
+
+.location-list__route-time {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
 }
 
 .location-list__route-chevron {
@@ -852,13 +861,14 @@
 /* Segment route inline panel */
 
 .segment-route {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
   padding: 0.25rem 0 0.375rem 1.25rem;
 }
 
 .segment-route__card {
+  flex: 0 0 52px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -918,6 +928,14 @@
 
 .segment-route__card--active .segment-route__meta {
   color: var(--color-primary-hover);
+}
+
+.segment-route__time {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  margin-top: 0.1rem;
 }
 
 /* Add day form */

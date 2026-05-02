@@ -19,6 +19,8 @@ const ROUTE_COLORS: Record<TransportMode, string> = {
   walking: '#22c55e',
   cycling: '#f59e0b',
   transit: '#8b5cf6',
+  ferry: '#0ea5e9',
+  flight: '#f97316',
 }
 
 type RenderedFeature = {
@@ -246,6 +248,8 @@ export function MapView({ trips }: MapViewProps) {
                         'walking', ROUTE_COLORS.walking,
                         'cycling', ROUTE_COLORS.cycling,
                         'transit', ROUTE_COLORS.transit,
+                        'ferry', ROUTE_COLORS.ferry,
+                        'flight', ROUTE_COLORS.flight,
                         '#9ca3af',
                       ],
                       'line-width': 4,

@@ -4,6 +4,9 @@ read claude.md always before starting.
 save usage in terms of claude tokens.
 don't waste all the tokens in once, work smart!
 
+now: 
+
+
 ## Claude notes
 
 ### סטטוס — הכל עובד בפרודקשן

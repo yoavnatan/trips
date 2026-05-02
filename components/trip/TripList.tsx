@@ -2,7 +2,15 @@
 
 import { useAtom } from 'jotai'
 import { selectedTripAtom } from '@/lib/store'
+import { CalendarDays } from 'lucide-react'
 import type { Trip } from '@/types'
+
+function formatDateRange(startDate: Date | null, endDate: Date | null): string | null {
+  if (!startDate) return null
+  const fmt = (d: Date) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (!endDate) return fmt(startDate)
+  return `${fmt(startDate)} – ${fmt(endDate)}`
+}
 
 interface TripListProps {
   trips: Trip[]
@@ -43,6 +51,12 @@ export function TripList({ trips }: TripListProps) {
         >
           <h3 className="trip-list__name">{trip.title}</h3>
           <p className="trip-list__destination">{trip.destination}</p>
+          {formatDateRange(trip.startDate, trip.endDate) && (
+            <p className="trip-list__dates">
+              <CalendarDays size={11} />
+              {formatDateRange(trip.startDate, trip.endDate)}
+            </p>
+          )}
         </li>
       ))}
     </ul>
