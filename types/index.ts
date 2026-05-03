@@ -18,6 +18,7 @@ export interface LocationPoint {
   orderIndex: number
   name: string
   notes: string | null
+  visited: boolean
 }
 
 export interface Day {

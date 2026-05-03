@@ -403,7 +403,11 @@
 }
 
 .location-list__num--focused {
-  background: #c9903a;
+  background: var(--color-focused);
+}
+
+.location-list__num--visited {
+  background: var(--color-success);
 }
 
 .location-list__drag-handle {
@@ -610,6 +614,44 @@
   border-color: var(--color-primary);
   background: var(--color-primary-light);
   color: var(--color-primary);
+}
+
+.location-list__duration-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.7rem;
+  color: var(--color-gray-500);
+  background: var(--color-gray-100);
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.location-list__visited {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--color-gray-300);
+  cursor: pointer;
+  padding: 0.125rem 0.25rem;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.location-list__visited:hover {
+  color: var(--color-gray-500);
+}
+
+.location-list__visited--done {
+  color: var(--color-success);
+}
+
+.location-list__visited--done:hover {
+  color: var(--color-success-hover);
 }
 
 /* Starting-from row (first location only) */

@@ -82,10 +82,14 @@ model LocationPoint {
   orderIndex Int
   name       String
   notes      String?
+  visited    Boolean @default(false)
 }
 ```
 
 **Live DB columns on Trip (verified):** id, userId, title, destination, createdAt, updatedAt, shareToken, startDate, endDate
+
+**Live DB columns on LocationPoint:** id, dayId, lat, lng, orderIndex, name, notes, visited
+⚠️ `visited` column requires manual SQL migration: `ALTER TABLE "LocationPoint" ADD COLUMN "visited" BOOLEAN NOT NULL DEFAULT false;`
 
 ## Jotai Store — lib/store.ts
 ```ts
@@ -111,10 +115,11 @@ dayRouteTotalAtom     // string | null — formatted total distance for open day
 Controlled input with 300ms debounced Mapbox forward geocode autocomplete (`types=place,locality,region,country`)
 
 ### Clicking a location in the list
-→ sets `focusedLocationAtom` (MapView flyTo zoom 14) AND `focusedLocationIdAtom` (highlights the number badge + map marker amber `#c9903a`)
+→ sets `focusedLocationAtom` (MapView flyTo zoom 14) AND `focusedLocationIdAtom` (highlights the number badge + map marker amber)
 - Clicking either the location **name button** or the **number badge** triggers both
 - `focusedLocationIdAtom` is cleared when switching days (`handleDayClick`)
-- Map marker gets class `map-marker--focused` (amber + scale 1.18); number badge gets `.location-list__num--focused`
+- Map marker gets class `map-marker--focused` (`--color-focused` amber + scale 1.18); number badge gets `.location-list__num--focused`
+- focused always takes priority over visited in the class logic
 
 ### Day selected
 → MapView fitBounds to all day locations (padding 80, maxZoom 15)
@@ -155,8 +160,20 @@ Shows "Day X selected — click the map to add a location" when a day is open
   - **Google Places** (`places.googleapis.com/v1/places:searchText`): `openNow` from `currentOpeningHours`; `weekdayDescriptions` from `currentOpeningHours` with fallback to `regularOpeningHours` (they're separate — one can have openNow without weekdays); rating, price level, website. Name validation: skipped for non-ASCII names (non-Latin scripts like Hebrew won't match English displayName — trust lat/lng instead); for ASCII names, returned place must share ≥1 word (>2 chars) with search name.
   - **Groq** (`llama-3.1-8b-instant`, JSON mode, max_tokens 600): returns `{ summary, type, duration, tip }`
 - Displays: type badge + duration badge → AI summary → tip → open/closed badge + rating + price → today's hours (expandable to full week) → website link → Google Maps link
-- `placeInfoCache` (module-level Map): only caches when `ai` is not null — avoids permanently caching Groq rate-limit failures (429); user can retry by closing+reopening the panel
+- `placeInfoCache` (module-level Map, declared before `SortableLocationItem`): only caches when `ai` is not null — avoids permanently caching Groq rate-limit failures (429); user can retry by closing+reopening the panel
+- `LocationInfoPanel` accepts `onDurationLoaded?: (duration: string | null) => void` — called when data arrives so the parent can show the duration hint in the nav-row
 - CSS: `.location-info__ai-badges`, `.location-info__ai-badge`, `.location-info__summary`, `.location-info__tip`, `.location-info__practical`, `.location-info__open-badge`, `.location-info__rating`, `.location-info__price`, `.location-info__hours-row`, `.location-info__hours-list`, `.location-info__ext-link`, `.location-info__actions`
+
+### Duration hint (TripDetail.tsx)
+- Each location shows a small pill badge (e.g. "2–3 hours") in the nav-row, before the ⓘ button
+- Sourced from the Groq AI `duration` field via `placeInfoCache`; initialized from cache on mount so it persists after panel is closed
+- CSS: `.location-list__duration-hint`
+
+### Visited toggle (TripDetail.tsx)
+- `CircleCheck` button in the location row (before the delete button); `toggleLocationVisited(id, bool)` server action persists to DB
+- Optimistic UI: state flips immediately, reverts on error
+- When visited: number badge → `.location-list__num--visited` (`--color-success` green); map marker → `.map-marker--visited` (same green)
+- focused class always takes priority over visited in the class expression
 
 ### English name badge (TripDetail.tsx)
 - Rendered for ALL locations (not gated on non-ASCII) — `EnglishNameBadge` calls `/api/place-name?name=&city=` → Groq returns the standard English name (max 20 tokens, temperature 0)
@@ -180,7 +197,7 @@ Shows "Day X selected — click the map to add a location" when a day is open
 /app
   /actions        - addDay, addLocationPoint, createTrip, deleteDay,
                     deleteLocation, reorderLocations, updateLocation,
-                    updateTrip, registerUser, signOutAction
+                    updateTrip, toggleLocationVisited, registerUser, signOutAction
   /api/auth       - NextAuth route
   /api/place-info - Server route: Google Places + Groq AI info for a location (hours, rating, summary, tip)
   /api/place-name - Server route: Groq translates a place name to standard English
@@ -217,7 +234,7 @@ Shows "Day X selected — click the map to add a location" when a day is open
 13. Multi-modal per-segment routing — walk/cycle/drive/transit per leg, smart defaults, transit with walk-to-stop legs
 14. Day difficulty badge — easy/moderate/hard pill in day header
 15. Reorder locations via drag (toggle in ⋮ menu)
-16. Full CSS variable system — all colors in `styles/setup/variables.css`
+16. Full CSS variable system — all colors in `styles/setup/variables.css`; **zero hardcoded hex outside that file**; `--color-focused` (amber) and `--color-success` (green) used for focused/visited states
 17. DM Sans font via `next/font/google`, loaded as `--font-sans` CSS variable
 18. Lucide icons throughout — no emoji
 19. Trip date range — `CalendarDays` button opens `react-day-picker` range picker; each day shows its derived date
@@ -227,6 +244,8 @@ Shows "Day X selected — click the map to add a location" when a day is open
 23. Place info panel — circular `ⓘ` button next to route pill; `/api/place-info` returns Google Places data (hours/rating/price) + Groq AI summary (type/duration/tip)
 24. Day header distance sync — header distance badge updates to real routing total when day is open (via `dayRouteTotalAtom`)
 25. English name badge — for ALL locations (not only non-ASCII), calls `/api/place-name` via Groq to show the standard English name inline in bold gray; suppresses if returned name matches original
+26. Duration hint — pill badge in nav-row before ⓘ button showing AI estimated visit time; sourced from `placeInfoCache`, persists after panel closes
+27. Visited toggle — `CircleCheck` button per location; persisted to DB via `toggleLocationVisited`; number badge + map marker turn green (`--color-success`) when visited
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)

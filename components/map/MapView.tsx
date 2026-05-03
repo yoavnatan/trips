@@ -279,7 +279,7 @@ export function MapView({ trips }: MapViewProps) {
           {locations.map((point, index) => (
             <Marker key={point.id} latitude={point.lat} longitude={point.lng}>
               <div
-                className={`map-marker${focusedLocationId === point.id ? ' map-marker--focused' : ''}`}
+                className={`map-marker${focusedLocationId === point.id ? ' map-marker--focused' : point.visited ? ' map-marker--visited' : ''}`}
                 title={point.name}
                 onClick={(e) => {
                   e.stopPropagation()

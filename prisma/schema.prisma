@@ -48,4 +48,5 @@ model LocationPoint {
   orderIndex Int
   name       String
   notes      String?
+  visited    Boolean @default(false)
 }

@@ -21,7 +21,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   Car, Footprints, Bike, Bus, TramFront, Train, Ship,
-  Plane, Clock,
+  Plane, Clock, CircleCheck,
   ChevronDown, ChevronUp, ArrowUpDown, Check, X,
   GripVertical, ArrowLeft, CalendarDays, Share2, MapPin, Navigation,
   MoreVertical, Trash2, Info,
@@ -36,6 +36,7 @@ import { deleteDay } from '@/app/actions/deleteDay'
 import { reorderLocations } from '@/app/actions/reorderLocations'
 import { updateLocation } from '@/app/actions/updateLocation'
 import { updateTrip } from '@/app/actions/updateTrip'
+import { toggleLocationVisited } from '@/app/actions/toggleLocationVisited'
 import { haversineDistance, formatDistance } from '@/lib/utils'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import type { TripWithDaysAndLocations, ActionState, SuggestedLocation, LocationPoint, TransportMode, RouteGeoJSON } from '@/types'
@@ -951,6 +952,25 @@ function SortableLocationList({ locs, city, deletingLocationId, reorderMode, onF
   )
 }
 
+type PlaceInfo = {
+  google: {
+    openNow: boolean | null
+    todayHours: string | null
+    weekdayDescriptions: string[] | null
+    rating: number | null
+    priceLevel: string | null
+    website: string | null
+  } | null
+  ai: {
+    summary: string
+    type?: string
+    duration?: string
+    tip?: string
+  } | null
+}
+
+const placeInfoCache = new Map<string, PlaceInfo>()
+
 interface SortableLocationItemProps {
   loc: LocationPoint
   city: string
@@ -965,10 +985,14 @@ interface SortableLocationItemProps {
 
 function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDeleting, reorderMode, onFocus, onDelete }: SortableLocationItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: loc.id })
+  const router = useRouter()
   const [notesOpen, setNotesOpen] = useState(false)
   const [segmentOpen, setSegmentOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [startingAddress, setStartingAddress] = useState('')
+  const [visited, setVisited] = useState(loc.visited)
+  const infoCacheKey = `${loc.name}|${city}|${loc.lat}|${loc.lng}`
+  const [durationHint, setDurationHint] = useState<string | null>(() => placeInfoCache.get(infoCacheKey)?.ai?.duration ?? null)
   const segmentModeValues = useAtomValue(segmentModesAtom)
   const segmentSummaries = useAtomValue(segmentSummaryAtom)
   const [focusedLocationId, setFocusedLocationId] = useAtom(focusedLocationIdAtom)
@@ -977,6 +1001,17 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
   const segKey = prevLoc ? `${prevLoc.id}-${loc.id}` : null
   const activeMode = segKey ? (segmentModeValues[segKey] ?? 'walking') : null
   const routeSummary = segKey ? (segmentSummaries[segKey] ?? null) : null
+
+  async function handleToggleVisited() {
+    const next = !visited
+    setVisited(next)
+    try {
+      await toggleLocationVisited(loc.id, next)
+      router.refresh()
+    } catch {
+      setVisited(!next)
+    }
+  }
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -993,7 +1028,7 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
           </span>
         ) : (
           <span
-            className={`location-list__num${isFocused ? ' location-list__num--focused' : ''}`}
+            className={`location-list__num${isFocused ? ' location-list__num--focused' : visited ? ' location-list__num--visited' : ''}`}
             onClick={() => { setFocusedLocationId(loc.id); onFocus() }}
             role="button"
             tabIndex={0}
@@ -1015,6 +1050,13 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
             </button>
           )}
         </div>
+        <button
+          className={`location-list__visited${visited ? ' location-list__visited--done' : ''}`}
+          onClick={() => void handleToggleVisited()}
+          title={visited ? 'Mark as not visited' : 'Mark as visited'}
+        >
+          <CircleCheck size={15} />
+        </button>
         <button
           className="location-list__delete"
           disabled={isDeleting}
@@ -1039,6 +1081,11 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
               onChange={(e) => setStartingAddress(e.target.value)}
             />
           </div>
+          {durationHint && (
+            <span className="location-list__duration-hint">
+              <Clock size={10} />{durationHint}
+            </span>
+          )}
           <button
             className={`location-list__info-circle${infoOpen ? ' location-list__info-circle--active' : ''}`}
             onClick={() => setInfoOpen((o) => !o)}
@@ -1071,6 +1118,11 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
                 {segmentOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
               </span>
             </button>
+            {durationHint && (
+              <span className="location-list__duration-hint">
+                <Clock size={10} />{durationHint}
+              </span>
+            )}
             <button
               className={`location-list__info-circle${infoOpen ? ' location-list__info-circle--active' : ''}`}
               onClick={() => setInfoOpen((o) => !o)}
@@ -1082,7 +1134,12 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
           {segmentOpen && <SegmentRoutePanel from={prevLoc} to={loc} />}
         </>
       )}
-      {infoOpen && <LocationInfoPanel name={loc.name} city={city} lat={loc.lat} lng={loc.lng} />}
+      {infoOpen && (
+        <LocationInfoPanel
+          name={loc.name} city={city} lat={loc.lat} lng={loc.lng}
+          onDurationLoaded={(d) => { if (d) setDurationHint(d) }}
+        />
+      )}
     </li>
   )
 }
@@ -1113,25 +1170,6 @@ function EnglishNameBadge({ name, city }: { name: string; city: string }) {
   return <span className="location-list__english-name">{englishName}</span>
 }
 
-type PlaceInfo = {
-  google: {
-    openNow: boolean | null
-    todayHours: string | null
-    weekdayDescriptions: string[] | null
-    rating: number | null
-    priceLevel: string | null
-    website: string | null
-  } | null
-  ai: {
-    summary: string
-    type?: string
-    duration?: string
-    tip?: string
-  } | null
-}
-
-const placeInfoCache = new Map<string, PlaceInfo>()
-
 function priceLevelLabel(level: string): string {
   const map: Record<string, string> = {
     PRICE_LEVEL_FREE: 'Free',
@@ -1143,25 +1181,32 @@ function priceLevelLabel(level: string): string {
   return map[level] ?? ''
 }
 
-function LocationInfoPanel({ name, city, lat, lng }: { name: string; city: string; lat: number; lng: number }) {
+function LocationInfoPanel({ name, city, lat, lng, onDurationLoaded }: {
+  name: string; city: string; lat: number; lng: number
+  onDurationLoaded?: (duration: string | null) => void
+}) {
   const cacheKey = `${name}|${city}|${lat}|${lng}`
   const cached = placeInfoCache.get(cacheKey)
   const [info, setInfo] = useState<PlaceInfo | 'loading'>(cached ?? 'loading')
   const [hoursOpen, setHoursOpen] = useState(false)
 
   useEffect(() => {
-    // Only skip fetch if we have a cached result with AI data; otherwise retry
-    // (Groq rate-limits can cause ai:null on first open — don't cache that permanently)
-    if (cached?.ai) return
+    if (cached?.ai) {
+      onDurationLoaded?.(cached.ai.duration ?? null)
+      return
+    }
     const params = new URLSearchParams({ name, city, lat: String(lat), lng: String(lng) })
     fetch(`/api/place-info?${params}`)
       .then((r) => r.json())
       .then((data: PlaceInfo) => {
-        if (data.ai) placeInfoCache.set(cacheKey, data)
+        if (data.ai) {
+          placeInfoCache.set(cacheKey, data)
+          onDurationLoaded?.(data.ai.duration ?? null)
+        }
         setInfo(data)
       })
       .catch(() => setInfo({ google: null, ai: null }))
-  }, [cacheKey, cached, name, lat, lng])
+  }, [cacheKey, cached, name, lat, lng]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const g = info !== 'loading' ? info.google : null
   const ai = info !== 'loading' ? info.ai : null

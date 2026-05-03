@@ -45,6 +45,10 @@
   --color-warning-light: #fef9c3;
   --color-warning: #a16207;
 
+  /* Focused / amber highlight (location badge + map marker) */
+  --color-focused: #c9903a;
+  --color-focused-hover: #b07d2e;
+
   /* Transit / violet */
   --color-transit: #7c3aed;
   --color-transit-light: #ede9fe;
