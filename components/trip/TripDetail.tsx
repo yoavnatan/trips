@@ -24,12 +24,12 @@ import {
   Plane, Clock,
   ChevronDown, ChevronUp, ArrowUpDown, Check, X,
   GripVertical, ArrowLeft, CalendarDays, Share2, MapPin, Navigation,
-  MoreVertical, Trash2,
+  MoreVertical, Trash2, Info,
 } from 'lucide-react'
 import { DayPicker } from 'react-day-picker'
 import type { DateRange } from 'react-day-picker'
 import 'react-day-picker/src/style.css'
-import { selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, segmentModesAtom, segmentSummaryAtom, dayRouteGeoJSONAtom } from '@/lib/store'
+import { selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, focusedLocationIdAtom, segmentModesAtom, segmentSummaryAtom, dayRouteGeoJSONAtom, dayRouteTotalAtom } from '@/lib/store'
 import { addDay } from '@/app/actions/addDay'
 import { deleteLocation } from '@/app/actions/deleteLocation'
 import { deleteDay } from '@/app/actions/deleteDay'
@@ -133,6 +133,8 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   const router = useRouter()
   const [state, formAction, pending] = useActionState(addDay, initialState)
   const [selectedDayId, setSelectedDayId] = useAtom(selectedDayIdAtom)
+  const setFocusedLocationId = useSetAtom(focusedLocationIdAtom)
+  const dayRouteTotal = useAtomValue(dayRouteTotalAtom)
   const segmentModes = useAtomValue(segmentModesAtom)
   const setSuggestedLocation = useSetAtom(suggestedLocationAtom)
   const setFocusedLocation = useSetAtom(focusedLocationAtom)
@@ -165,6 +167,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   function handleDayClick(dayId: string): void {
     const nextId = dayId === selectedDayId ? null : dayId
     setSelectedDayId(nextId)
+    setFocusedLocationId(null)
     setSuggestions([])
     setSuggestingForDayId(null)
     setReorderMode(false)
@@ -317,7 +320,9 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                           {locs.length} loc{locs.length !== 1 ? 's' : ''}
                         </span>
                         {locs.length > 1 && (
-                          <span className="day-list__total-dist">{formatDistance(totalDist)}</span>
+                          <span className="day-list__total-dist">
+                            {isOpen && dayRouteTotal ? dayRouteTotal : formatDistance(totalDist)}
+                          </span>
                         )}
                         {difficulty && (
                           <span className={`day-list__difficulty day-list__difficulty--${difficulty}`}>
@@ -367,6 +372,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                       ) : (
                         <SortableLocationList
                           locs={locs}
+                          city={trip.destination}
                           deletingLocationId={deletingLocationId}
                           reorderMode={reorderMode}
                           onFocus={(loc) => setFocusedLocation({ lat: loc.lat, lng: loc.lng })}
@@ -781,6 +787,7 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
   const [segmentModes, setSegmentModes] = useAtom(segmentModesAtom)
   const setDayRouteGeoJSON = useSetAtom(dayRouteGeoJSONAtom)
   const setSegmentSummary = useSetAtom(segmentSummaryAtom)
+  const setDayRouteTotal = useSetAtom(dayRouteTotalAtom)
   const [allData, setAllData] = useState<Record<string, Record<TransportMode, SegResult>>>({})
 
   const pairs = useMemo(
@@ -841,7 +848,7 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
   }, [segmentModes, allData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    return () => { setDayRouteGeoJSON(null) }
+    return () => { setDayRouteGeoJSON(null); setDayRouteTotal(null) }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const totals = useMemo(() => {
@@ -857,6 +864,10 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
     return { distance: formatDistance(totalDistKm), duration: fmtDuration(totalDurSecs) }
   }, [pairs, segmentModes, allData])
 
+  useEffect(() => {
+    setDayRouteTotal(totals?.distance ?? null)
+  }, [totals]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return totals ? (
     <div className="day-route__total">
       <Navigation size={12} />
@@ -867,13 +878,14 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
 
 interface SortableLocationListProps {
   locs: LocationPoint[]
+  city: string
   deletingLocationId: string | null
   reorderMode: boolean
   onFocus: (loc: LocationPoint) => void
   onDelete: (loc: LocationPoint) => void
 }
 
-function SortableLocationList({ locs, deletingLocationId, reorderMode, onFocus, onDelete }: SortableLocationListProps) {
+function SortableLocationList({ locs, city, deletingLocationId, reorderMode, onFocus, onDelete }: SortableLocationListProps) {
   const router = useRouter()
   const [items, setItems] = useState<LocationPoint[]>(locs)
   const [reorderError, setReorderError] = useState<string | null>(null)
@@ -921,6 +933,7 @@ function SortableLocationList({ locs, deletingLocationId, reorderMode, onFocus, 
               <SortableLocationItem
                 key={loc.id}
                 loc={loc}
+                city={city}
                 index={i + 1}
                 prevLoc={i > 0 ? items[i - 1] : null}
                 distFromPrev={i > 0 ? segDists[i - 1] : null}
@@ -940,6 +953,7 @@ function SortableLocationList({ locs, deletingLocationId, reorderMode, onFocus, 
 
 interface SortableLocationItemProps {
   loc: LocationPoint
+  city: string
   index: number
   prevLoc: LocationPoint | null
   distFromPrev: number | null
@@ -949,13 +963,16 @@ interface SortableLocationItemProps {
   onDelete: () => void
 }
 
-function SortableLocationItem({ loc, index, prevLoc, distFromPrev, isDeleting, reorderMode, onFocus, onDelete }: SortableLocationItemProps) {
+function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDeleting, reorderMode, onFocus, onDelete }: SortableLocationItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: loc.id })
   const [notesOpen, setNotesOpen] = useState(false)
   const [segmentOpen, setSegmentOpen] = useState(false)
+  const [infoOpen, setInfoOpen] = useState(false)
   const [startingAddress, setStartingAddress] = useState('')
   const segmentModeValues = useAtomValue(segmentModesAtom)
   const segmentSummaries = useAtomValue(segmentSummaryAtom)
+  const [focusedLocationId, setFocusedLocationId] = useAtom(focusedLocationIdAtom)
+  const isFocused = focusedLocationId === loc.id
 
   const segKey = prevLoc ? `${prevLoc.id}-${loc.id}` : null
   const activeMode = segKey ? (segmentModeValues[segKey] ?? 'walking') : null
@@ -975,12 +992,20 @@ function SortableLocationItem({ loc, index, prevLoc, distFromPrev, isDeleting, r
             <GripVertical size={16} />
           </span>
         ) : (
-          <span className="location-list__num">{index}</span>
+          <span
+            className={`location-list__num${isFocused ? ' location-list__num--focused' : ''}`}
+            onClick={() => { setFocusedLocationId(loc.id); onFocus() }}
+            role="button"
+            tabIndex={0}
+          >{index}</span>
         )}
         <div className="location-list__name-block">
-          <button className="location-list__name" onClick={onFocus}>
-            {loc.name}
-          </button>
+          <div className="location-list__name-row">
+            <button className="location-list__name" onClick={() => { setFocusedLocationId(loc.id); onFocus() }}>
+              {loc.name}
+            </button>
+            <EnglishNameBadge name={loc.name} city={city} />
+          </div>
           {!notesOpen && (
             <button
               className={`location-list__notes-preview${loc.notes ? '' : ' location-list__notes-preview--empty'}`}
@@ -1004,42 +1029,229 @@ function SortableLocationItem({ loc, index, prevLoc, distFromPrev, isDeleting, r
       )}
 
       {prevLoc === null && (
-        <div className="location-list__from">
-          <MapPin size={12} className="location-list__from-icon" />
-          <input
-            className="location-list__from-input"
-            placeholder="Starting from…"
-            value={startingAddress}
-            onChange={(e) => setStartingAddress(e.target.value)}
-          />
+        <div className="location-list__nav-row location-list__nav-row--from">
+          <div className="location-list__from">
+            <MapPin size={12} className="location-list__from-icon" />
+            <input
+              className="location-list__from-input"
+              placeholder="Starting from…"
+              value={startingAddress}
+              onChange={(e) => setStartingAddress(e.target.value)}
+            />
+          </div>
+          <button
+            className={`location-list__info-circle${infoOpen ? ' location-list__info-circle--active' : ''}`}
+            onClick={() => setInfoOpen((o) => !o)}
+            title="Place info"
+          >
+            <Info size={12} />
+          </button>
         </div>
       )}
 
       {prevLoc !== null && distFromPrev !== null && activeMode && (
         <>
-          <button
-            className={`location-list__route-btn${segmentOpen ? ' location-list__route-btn--open' : ''}`}
-            onClick={() => setSegmentOpen((o) => !o)}
-          >
-            <span className="location-list__route-icon"><ModeIcon mode={activeMode} size={13} /></span>
-            <span className="location-list__route-info">
-              {routeSummary ? (
-                <>
-                  {routeSummary.distance}
-                  <span className="location-list__route-time"><Clock size={11} />{routeSummary.duration}</span>
-                </>
-              ) : (
-                `≈ ${formatDistance(distFromPrev)}`
-              )}
-            </span>
-            <span className="location-list__route-chevron">
-              {segmentOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-            </span>
-          </button>
+          <div className="location-list__nav-row">
+            <button
+              className={`location-list__route-btn${segmentOpen ? ' location-list__route-btn--open' : ''}`}
+              onClick={() => setSegmentOpen((o) => !o)}
+            >
+              <span className="location-list__route-icon"><ModeIcon mode={activeMode} size={13} /></span>
+              <span className="location-list__route-info">
+                {routeSummary ? (
+                  <>
+                    {routeSummary.distance}
+                    <span className="location-list__route-time"><Clock size={11} />{routeSummary.duration}</span>
+                  </>
+                ) : (
+                  `≈ ${formatDistance(distFromPrev)}`
+                )}
+              </span>
+              <span className="location-list__route-chevron">
+                {segmentOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+              </span>
+            </button>
+            <button
+              className={`location-list__info-circle${infoOpen ? ' location-list__info-circle--active' : ''}`}
+              onClick={() => setInfoOpen((o) => !o)}
+              title="Place info"
+            >
+              <Info size={12} />
+            </button>
+          </div>
           {segmentOpen && <SegmentRoutePanel from={prevLoc} to={loc} />}
         </>
       )}
+      {infoOpen && <LocationInfoPanel name={loc.name} city={city} lat={loc.lat} lng={loc.lng} />}
     </li>
+  )
+}
+
+
+const englishNameCache = new Map<string, string | null>()
+
+function EnglishNameBadge({ name, city }: { name: string; city: string }) {
+  const cacheKey = `${name}|${city}`
+  const cached = englishNameCache.get(cacheKey)
+  const [englishName, setEnglishName] = useState<string | null>(
+    typeof cached === 'string' ? cached : null
+  )
+
+  useEffect(() => {
+    if (cached !== undefined) return
+    const params = new URLSearchParams({ name, city })
+    fetch(`/api/place-name?${params}`)
+      .then((r) => r.json())
+      .then((data: { name: string | null }) => {
+        englishNameCache.set(cacheKey, data.name)
+        setEnglishName(data.name)
+      })
+      .catch(() => englishNameCache.set(cacheKey, null))
+  }, [cacheKey, cached, name, city])
+
+  if (!englishName || englishName.toLowerCase() === name.toLowerCase()) return null
+  return <span className="location-list__english-name">{englishName}</span>
+}
+
+type PlaceInfo = {
+  google: {
+    openNow: boolean | null
+    todayHours: string | null
+    weekdayDescriptions: string[] | null
+    rating: number | null
+    priceLevel: string | null
+    website: string | null
+  } | null
+  ai: {
+    summary: string
+    type?: string
+    duration?: string
+    tip?: string
+  } | null
+}
+
+const placeInfoCache = new Map<string, PlaceInfo>()
+
+function priceLevelLabel(level: string): string {
+  const map: Record<string, string> = {
+    PRICE_LEVEL_FREE: 'Free',
+    PRICE_LEVEL_INEXPENSIVE: '$',
+    PRICE_LEVEL_MODERATE: '$$',
+    PRICE_LEVEL_EXPENSIVE: '$$$',
+    PRICE_LEVEL_VERY_EXPENSIVE: '$$$$',
+  }
+  return map[level] ?? ''
+}
+
+function LocationInfoPanel({ name, city, lat, lng }: { name: string; city: string; lat: number; lng: number }) {
+  const cacheKey = `${name}|${city}|${lat}|${lng}`
+  const cached = placeInfoCache.get(cacheKey)
+  const [info, setInfo] = useState<PlaceInfo | 'loading'>(cached ?? 'loading')
+  const [hoursOpen, setHoursOpen] = useState(false)
+
+  useEffect(() => {
+    // Only skip fetch if we have a cached result with AI data; otherwise retry
+    // (Groq rate-limits can cause ai:null on first open — don't cache that permanently)
+    if (cached?.ai) return
+    const params = new URLSearchParams({ name, city, lat: String(lat), lng: String(lng) })
+    fetch(`/api/place-info?${params}`)
+      .then((r) => r.json())
+      .then((data: PlaceInfo) => {
+        if (data.ai) placeInfoCache.set(cacheKey, data)
+        setInfo(data)
+      })
+      .catch(() => setInfo({ google: null, ai: null }))
+  }, [cacheKey, cached, name, lat, lng])
+
+  const g = info !== 'loading' ? info.google : null
+  const ai = info !== 'loading' ? info.ai : null
+
+  return (
+    <div className="location-info">
+      {info === 'loading' ? (
+        <p className="location-info__loading">Loading…</p>
+      ) : (
+        <>
+          {ai && (
+            <>
+              {(ai.type || ai.duration) && (
+                <div className="location-info__ai-badges">
+                  {ai.type && <span className="location-info__ai-badge">{ai.type}</span>}
+                  {ai.duration && (
+                    <span className="location-info__ai-badge location-info__ai-badge--duration">
+                      <Clock size={10} /> {ai.duration}
+                    </span>
+                  )}
+                </div>
+              )}
+              <p className="location-info__summary">{ai.summary}</p>
+              {ai.tip && <p className="location-info__tip">💡 {ai.tip}</p>}
+            </>
+          )}
+
+          {g && (
+            <div className="location-info__practical">
+              <div className="location-info__meta-top">
+                {g.openNow !== null && (
+                  <span className={`location-info__open-badge${g.openNow ? '' : ' location-info__open-badge--closed'}`}>
+                    {g.openNow ? 'Open now' : 'Closed'}
+                  </span>
+                )}
+                {g.rating !== null && (
+                  <span className="location-info__rating">★ {g.rating.toFixed(1)}</span>
+                )}
+                {g.priceLevel && (
+                  <span className="location-info__price">{priceLevelLabel(g.priceLevel)}</span>
+                )}
+              </div>
+
+              {g.todayHours && (
+                <div className="location-info__hours-row">
+                  <Clock size={11} className="location-info__meta-icon" />
+                  <span className="location-info__hours-today">{g.todayHours}</span>
+                  {g.weekdayDescriptions && g.weekdayDescriptions.length > 1 && (
+                    <button className="location-info__hours-toggle" onClick={() => setHoursOpen((o) => !o)}>
+                      {hoursOpen ? '▲' : '▼'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {hoursOpen && g.weekdayDescriptions && (
+                <ul className="location-info__hours-list">
+                  {g.weekdayDescriptions.map((line) => (
+                    <li key={line} className="location-info__hours-item">{line}</li>
+                  ))}
+                </ul>
+              )}
+
+              {g.website && (
+                <a
+                  className="location-info__ext-link"
+                  href={g.website.startsWith('http') ? g.website : `https://${g.website}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Official website ↗
+                </a>
+              )}
+            </div>
+          )}
+
+          <div className="location-info__actions">
+            <a
+              className="location-info__action-link"
+              href={`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Navigation size={11} />
+              Google Maps
+            </a>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 

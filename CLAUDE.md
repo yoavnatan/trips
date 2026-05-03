@@ -24,6 +24,12 @@ Users can create trips, divide them into days, and mark location points on a map
 - Jotai v2 (client state)
 - NextAuth.js v5 (email/password + Google OAuth)
 
+## Environment Variables (.env.local)
+- `NEXT_PUBLIC_MAPBOX_TOKEN` — Mapbox public token
+- `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_URL`, `AUTH_TRUST_HOST` — NextAuth
+- `GROQ_API_KEY` — Groq API (free tier, `llama-3.1-8b-instant`); used by `/api/place-info` and `/api/place-name`
+- `GOOGLE_PLACES_API_KEY` — Google Places API v1; used by `/api/place-info`
+
 ## Production
 - Vercel: https://trips-8sq6.vercel.app
 - Auto-deploys on `git push origin main`
@@ -86,12 +92,14 @@ model LocationPoint {
 selectedTripAtom      // Trip | null — currently open trip
 selectedDayIdAtom     // string | null — currently open day
 suggestedLocationAtom // SuggestedLocation | null — AI suggestion to add
-focusedLocationAtom   // {lat, lng} | null — fly map to this point
+focusedLocationAtom   // {lat, lng} | null — fly map to this point (consumed + cleared by MapView)
+focusedLocationIdAtom // string | null — ID of selected location; drives amber highlight in list + map marker
 mapClickedDestinationAtom // string | null — city name from map click → fills TripForm
 routeModeAtom         // TransportMode — kept for MapView compat (legacy)
 dayRouteGeoJSONAtom   // RouteGeoJSON | null — combined GeoJSON for all day segments
 segmentModesAtom      // Record<string, TransportMode> — mode per segment key "${fromId}-${toId}"
 segmentSummaryAtom    // Record<string, {distance, duration}> — actual route info per segment (written by DayRoute, read by location list)
+dayRouteTotalAtom     // string | null — formatted total distance for open day (e.g. "4.2 km"); written by DayRoute, read by day header
 ```
 
 ## Key Patterns
@@ -103,7 +111,10 @@ segmentSummaryAtom    // Record<string, {distance, duration}> — actual route i
 Controlled input with 300ms debounced Mapbox forward geocode autocomplete (`types=place,locality,region,country`)
 
 ### Clicking a location in the list
-→ sets `focusedLocationAtom` → MapView flyTo zoom 14
+→ sets `focusedLocationAtom` (MapView flyTo zoom 14) AND `focusedLocationIdAtom` (highlights the number badge + map marker amber `#c9903a`)
+- Clicking either the location **name button** or the **number badge** triggers both
+- `focusedLocationIdAtom` is cleared when switching days (`handleDayClick`)
+- Map marker gets class `map-marker--focused` (amber + scale 1.18); number badge gets `.location-list__num--focused`
 
 ### Day selected
 → MapView fitBounds to all day locations (padding 80, maxZoom 15)
@@ -126,16 +137,38 @@ Shows "Day X selected — click the map to add a location" when a day is open
 
 ### Routing inside each location (TripDetail.tsx)
 - Route UI lives INSIDE each location item, not between locations
-- **First location**: shows "Starting from…" address input (`location-list__from`)
-- **Other locations**: shows a route pill button → expands `SegmentRoutePanel` (4 mode cards)
+- **First location**: shows "Starting from…" address input (`location-list__from`) + circular info button, wrapped in `location-list__nav-row--from`
+- **Other locations**: shows a route pill button + circular info button in `location-list__nav-row` → pill expands `SegmentRoutePanel` (4 mode cards)
 - Segment key: `${prevLoc.id}-${loc.id}` (from previous location to this one)
-- `DayRoute` component runs silently: fetches all segment data, writes to `segmentSummaryAtom` + `dayRouteGeoJSONAtom`, renders only the total distance/time line
+- `DayRoute` component runs silently: fetches all segment data, writes to `segmentSummaryAtom` + `dayRouteGeoJSONAtom` + `dayRouteTotalAtom`, renders only the total distance/time line
 
 ### Multi-modal per-segment routing (TripDetail.tsx)
 - Smart default via `suggestMode(distKm)`: <1.5km→walk, 1.5-25km→transit, >25km→drive
 - User choices stored in `segmentModesAtom` (key=`${fromId}-${toId}`); never overwritten once set
 - Transit: `straightLineTransitResult()` sets an instant straight-line GeoJSON; `fetchSegmentTransit()` upgrades it with walk→stop→transit→stop→walk using Overpass API + Mapbox walking
 - MapView colors each segment by its `mode` property using Mapbox data-driven styling
+
+### Place info panel (TripDetail.tsx)
+- Each location has a circular `ⓘ` button (`location-list__info-circle`) next to the route pill (or "Starting from" input for first location), both wrapped in `location-list__nav-row`
+- Clicking toggles `infoOpen` state → renders `LocationInfoPanel` below the nav row
+- `LocationInfoPanel` calls `/api/place-info?name=&city=&lat=&lng=` which runs two parallel fetches:
+  - **Google Places** (`places.googleapis.com/v1/places:searchText`): `openNow` from `currentOpeningHours`; `weekdayDescriptions` from `currentOpeningHours` with fallback to `regularOpeningHours` (they're separate — one can have openNow without weekdays); rating, price level, website. Name validation: skipped for non-ASCII names (non-Latin scripts like Hebrew won't match English displayName — trust lat/lng instead); for ASCII names, returned place must share ≥1 word (>2 chars) with search name.
+  - **Groq** (`llama-3.1-8b-instant`, JSON mode, max_tokens 600): returns `{ summary, type, duration, tip }`
+- Displays: type badge + duration badge → AI summary → tip → open/closed badge + rating + price → today's hours (expandable to full week) → website link → Google Maps link
+- `placeInfoCache` (module-level Map): only caches when `ai` is not null — avoids permanently caching Groq rate-limit failures (429); user can retry by closing+reopening the panel
+- CSS: `.location-info__ai-badges`, `.location-info__ai-badge`, `.location-info__summary`, `.location-info__tip`, `.location-info__practical`, `.location-info__open-badge`, `.location-info__rating`, `.location-info__price`, `.location-info__hours-row`, `.location-info__hours-list`, `.location-info__ext-link`, `.location-info__actions`
+
+### English name badge (TripDetail.tsx)
+- Rendered for ALL locations (not gated on non-ASCII) — `EnglishNameBadge` calls `/api/place-name?name=&city=` → Groq returns the standard English name (max 20 tokens, temperature 0)
+- Badge renders only if the returned English name differs from the original (case-insensitive); suppresses itself for already-English names
+- Module-level `englishNameCache` prevents duplicate fetches
+- Layout: `location-list__name-row` (flex, align baseline, gap) wraps the name button + badge inline
+- CSS: `.location-list__name-row`, `.location-list__english-name` (0.75rem, bold, gray-500)
+
+### Day header distance sync (TripDetail.tsx)
+- Day header shows `formatDistance(haversineSum)` as a fallback
+- When a day is open, `DayRoute` writes its computed real routing total to `dayRouteTotalAtom` (useEffect on `totals`); clears on unmount
+- Day header reads `dayRouteTotalAtom` and shows it instead for the open day → always matches the "X km · Y total" line at the bottom of the day body
 
 ### Day difficulty badge (TripDetail.tsx)
 - `computeDayDifficulty(locs, segmentModes)` — walking/cycling = "active" km, driving/transit = ignored
@@ -149,6 +182,8 @@ Shows "Day X selected — click the map to add a location" when a day is open
                     deleteLocation, reorderLocations, updateLocation,
                     updateTrip, registerUser, signOutAction
   /api/auth       - NextAuth route
+  /api/place-info - Server route: Google Places + Groq AI info for a location (hours, rating, summary, tip)
+  /api/place-name - Server route: Groq translates a place name to standard English
   /share/[token]  - Public read-only shared trip page
   layout.tsx, page.tsx
 /components
@@ -188,6 +223,10 @@ Shows "Day X selected — click the map to add a location" when a day is open
 19. Trip date range — `CalendarDays` button opens `react-day-picker` range picker; each day shows its derived date
 20. Routing inside each location — directions UI per location item; first location has "Starting from" input
 21. Day header ⋮ menu — delete + reorder actions in dropdown; chevron moved to left of day name
+22. Location selection highlight — clicking a location name or number badge sets `focusedLocationIdAtom`; number badge turns amber, map marker turns amber + scales up
+23. Place info panel — circular `ⓘ` button next to route pill; `/api/place-info` returns Google Places data (hours/rating/price) + Groq AI summary (type/duration/tip)
+24. Day header distance sync — header distance badge updates to real routing total when day is open (via `dayRouteTotalAtom`)
+25. English name badge — for ALL locations (not only non-ASCII), calls `/api/place-name` via Groq to show the standard English name inline in bold gray; suppresses if returned name matches original
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)

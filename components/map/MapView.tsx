@@ -7,7 +7,7 @@ import Map, { Marker, Source, Layer, NavigationControl, Popup } from 'react-map-
 import type { MapRef } from 'react-map-gl/mapbox'
 import type { MapMouseEvent } from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, mapClickedDestinationAtom, routeModeAtom, dayRouteGeoJSONAtom } from '@/lib/store'
+import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, focusedLocationIdAtom, mapClickedDestinationAtom, routeModeAtom, dayRouteGeoJSONAtom } from '@/lib/store'
 import { addLocationPoint } from '@/app/actions/addLocationPoint'
 import { updateLocation } from '@/app/actions/updateLocation'
 import type { TripWithDaysAndLocations, ActionState, LocationPoint, TransportMode } from '@/types'
@@ -141,6 +141,7 @@ export function MapView({ trips }: MapViewProps) {
   const [suggestedLocation, setSuggestedLocation] = useAtom(suggestedLocationAtom)
   const [focusedLocation, setFocusedLocation] = useAtom(focusedLocationAtom)
   const setMapClickedDestination = useSetAtom(mapClickedDestinationAtom)
+  const focusedLocationId = useAtomValue(focusedLocationIdAtom)
   const routeMode = useAtomValue(routeModeAtom)
   const dayRouteGeoJSON = useAtomValue(dayRouteGeoJSONAtom)
 
@@ -278,7 +279,7 @@ export function MapView({ trips }: MapViewProps) {
           {locations.map((point, index) => (
             <Marker key={point.id} latitude={point.lat} longitude={point.lng}>
               <div
-                className="map-marker"
+                className={`map-marker${focusedLocationId === point.id ? ' map-marker--focused' : ''}`}
                 title={point.name}
                 onClick={(e) => {
                   e.stopPropagation()
