@@ -166,7 +166,6 @@
 .day-list__item {
   border-bottom: 1px solid var(--color-gray-200);
   border-left: 3px solid transparent;
-  overflow: hidden;
 }
 
 .day-list__item--active {

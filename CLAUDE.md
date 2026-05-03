@@ -136,8 +136,9 @@ Shows "Day X selected — click the map to add a location" when a day is open
 
 ### Day header — ⋮ menu (TripDetail.tsx)
 - Chevron (open/close indicator) is on the LEFT of the day name inside the header button
-- A `MoreVertical` (`⋮`) button on the right opens a dropdown with: **Reorder** (when day open + ≥2 locations) and **Delete day**
+- A `MoreVertical` (`⋮`) button on the right opens a dropdown with: **Reorder** (when day open + ≥2 locations), **Clear locations** (when day has ≥1 location — removes all locations, keeps the day), **Delete day**
 - `menuOpenDayId: string | null` state tracks which day's menu is open; closed via document click listener
+- ⚠️ `.day-list__item` must NOT have `overflow: hidden` — the dropdown is absolutely positioned and would be clipped
 - CSS: `.day-list__menu`, `.day-list__menu-trigger`, `.day-list__menu-dropdown`, `.day-list__menu-item`
 
 ### Routing inside each location (TripDetail.tsx)
@@ -196,7 +197,7 @@ Shows "Day X selected — click the map to add a location" when a day is open
 ```
 /app
   /actions        - addDay, addLocationPoint, createTrip, deleteDay,
-                    deleteLocation, reorderLocations, updateLocation,
+                    deleteLocation, clearDayLocations, reorderLocations, updateLocation,
                     updateTrip, toggleLocationVisited, registerUser, signOutAction
   /api/auth       - NextAuth route
   /api/place-info - Server route: Google Places + Groq AI info for a location (hours, rating, summary, tip)
@@ -239,7 +240,7 @@ Shows "Day X selected — click the map to add a location" when a day is open
 18. Lucide icons throughout — no emoji
 19. Trip date range — `CalendarDays` button opens `react-day-picker` range picker; each day shows its derived date
 20. Routing inside each location — directions UI per location item; first location has "Starting from" input
-21. Day header ⋮ menu — delete + reorder actions in dropdown; chevron moved to left of day name
+21. Day header ⋮ menu — reorder, clear locations, and delete actions in dropdown; chevron moved to left of day name; deleting a day renumbers all subsequent days
 22. Location selection highlight — clicking a location name or number badge sets `focusedLocationIdAtom`; number badge turns amber, map marker turns amber + scales up
 23. Place info panel — circular `ⓘ` button next to route pill; `/api/place-info` returns Google Places data (hours/rating/price) + Groq AI summary (type/duration/tip)
 24. Day header distance sync — header distance badge updates to real routing total when day is open (via `dayRouteTotalAtom`)

@@ -37,6 +37,7 @@ import { reorderLocations } from '@/app/actions/reorderLocations'
 import { updateLocation } from '@/app/actions/updateLocation'
 import { updateTrip } from '@/app/actions/updateTrip'
 import { toggleLocationVisited } from '@/app/actions/toggleLocationVisited'
+import { clearDayLocations } from '@/app/actions/clearDayLocations'
 import { haversineDistance, formatDistance } from '@/lib/utils'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import type { TripWithDaysAndLocations, ActionState, SuggestedLocation, LocationPoint, TransportMode, RouteGeoJSON } from '@/types'
@@ -218,6 +219,18 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
     })
   }
 
+  function handleClearDayLocations(dayId: string, dayNumber: number, locationCount: number): void {
+    setConfirmModal({
+      title: `Clear Day ${dayNumber} locations?`,
+      message: `All ${locationCount} location${locationCount !== 1 ? 's' : ''} will be removed. The day itself will remain.`,
+      onConfirm: async () => {
+        setConfirmModal(null)
+        await clearDayLocations(dayId)
+        router.refresh()
+      },
+    })
+  }
+
   function handleDeleteDay(dayId: string, dayNumber: number, locationCount: number): void {
     const extra = locationCount > 0
       ? ` This will also remove its ${locationCount} location${locationCount !== 1 ? 's' : ''}.`
@@ -349,6 +362,15 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                             >
                               <ArrowUpDown size={13} />
                               {reorderMode ? 'Stop reordering' : 'Reorder'}
+                            </button>
+                          )}
+                          {locs.length > 0 && (
+                            <button
+                              className="day-list__menu-item"
+                              onClick={(e) => { e.stopPropagation(); setMenuOpenDayId(null); handleClearDayLocations(day.id, day.dayNumber, locs.length) }}
+                            >
+                              <X size={13} />
+                              Clear locations
                             </button>
                           )}
                           <button
