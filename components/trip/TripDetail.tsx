@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -1283,6 +1283,10 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
   const segmentSummaries = useAtomValue(segmentSummaryAtom)
   const [focusedLocationId, setFocusedLocationId] = useAtom(focusedLocationIdAtom)
   const isFocused = focusedLocationId === loc.id
+  const itemRef = useRef<HTMLLIElement | null>(null)
+  useEffect(() => {
+    if (isFocused) itemRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [isFocused])
 
   const segKey = prevLoc ? `${prevLoc.id}-${loc.id}` : null
   const activeMode = segKey ? (segmentModeValues[segKey] ?? 'walking') : null
@@ -1306,7 +1310,7 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
   }
 
   return (
-    <li ref={setNodeRef} style={style} className="location-list__item">
+    <li ref={(el) => { setNodeRef(el); itemRef.current = el }} style={style} className="location-list__item">
       <div className="location-list__row">
         {reorderMode ? (
           <span className="location-list__drag-handle" {...attributes} {...listeners} title="Drag to reorder">

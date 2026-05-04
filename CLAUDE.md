@@ -130,9 +130,16 @@ Controlled input with 300ms debounced Mapbox forward geocode autocomplete (`type
 - Shows all days' locations as colored markers (`map-marker--day-N` class, N = dayIndex % 10)
 - Shows dashed straight-line GeoJSON routes per day, colored via `['get', 'color']` data-driven expression
 - `DAY_COLORS` array in MapView.tsx mirrors the `--color-day-N` CSS variables in variables.css
-- Clicking a marker in overview mode does flyTo only (no edit popup)
+- Clicking a marker in overview mode: sets `selectedDayIdAtom` (opens the day) + `focusedLocationIdAtom` (amber highlight) + `focusedLocationAtom` (flyTo to that location). The flyTo effect runs after the day's fitBounds effect so it wins.
+- Clicking a marker in single-day mode: flyTo + sets `focusedLocationIdAtom` (no edit popup)
+- `SortableLocationItem` auto-scrolls into view (`scrollIntoView({ block: 'nearest' })`) when `isFocused` becomes true
 - Entering a trip: fits bounds to all locations if any exist, else flies to destination city
 - Deselecting a day: also fits bounds to all locations
+
+### HomeLayout (components/HomeLayout.tsx)
+- Resizable sidebar (desktop, horizontal) and map area (mobile, vertical) via pointer drag on `.home-layout__resize-handle`
+- Sizes persist in `localStorage` keys `trips:sidebar-width` and `trips:map-height`; loaded on mount via `useEffect`, saved on drag end (`onPointerUp`)
+- Desktop range: 360–620px sidebar; mobile map height: 15–35vh
 
 ### Day selected
 → MapView fitBounds to all day locations (padding 80, maxZoom 15)
@@ -309,6 +316,8 @@ Shows "Day X selected — click the map to add a location" when a day is open
 32. Day progress circle — SVG donut in every day header showing visited/total ratio; blue → green when fully done; `DayProgressCircle` component; visible in both collapsed and expanded states
 33. Day description — inline editor for `Day.summary`; "Add/Edit description" button at top of expanded day body; `updateDaySummary` server action; optimistic update
 34. Mark all done — ⋮ menu item bulk-marks all day locations visited (or unvisited); `markAllLocationsVisited` server action; optimistic update propagates to `SortableLocationItem` via `useEffect` on `loc.visited`
+35. Sidebar/map size persistence — `HomeLayout` saves sidebar width and map height to `localStorage` on drag end; restored on next visit (per browser, not per user)
+36. Map marker selection — clicking any marker (overview or single-day mode) selects the location: sets `focusedLocationIdAtom` (amber highlight on badge + marker) and scrolls the list to that item; in overview mode also opens the day via `selectedDayIdAtom`
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)

@@ -143,11 +143,11 @@ export function MapView({ trips }: MapViewProps) {
   const [pendingPoint, setPendingPoint] = useState<PendingPoint | null>(null)
   const [editingLocation, setEditingLocation] = useState<LocationPoint | null>(null)
   const selectedTrip = useAtomValue(selectedTripAtom)
-  const selectedDayId = useAtomValue(selectedDayIdAtom)
+  const [selectedDayId, setSelectedDayId] = useAtom(selectedDayIdAtom)
   const [suggestedLocation, setSuggestedLocation] = useAtom(suggestedLocationAtom)
   const [focusedLocation, setFocusedLocation] = useAtom(focusedLocationAtom)
   const setMapClickedDestination = useSetAtom(mapClickedDestinationAtom)
-  const focusedLocationId = useAtomValue(focusedLocationIdAtom)
+  const [focusedLocationId, setFocusedLocationId] = useAtom(focusedLocationIdAtom)
   const routeMode = useAtomValue(routeModeAtom)
   const dayRouteGeoJSON = useAtomValue(dayRouteGeoJSONAtom)
 
@@ -302,7 +302,9 @@ export function MapView({ trips }: MapViewProps) {
                   title={`Day ${day.dayNumber}: ${point.name}`}
                   onClick={(e) => {
                     e.stopPropagation()
-                    mapRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 14, duration: 900 })
+                    setSelectedDayId(day.id)
+                    setFocusedLocationId(point.id)
+                    setFocusedLocation({ lat: point.lat, lng: point.lng })
                   }}
                 >
                   <span className="map-marker__number">{locIdx + 1}</span>
@@ -358,7 +360,7 @@ export function MapView({ trips }: MapViewProps) {
                 onClick={(e) => {
                   e.stopPropagation()
                   mapRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 15, duration: 800 })
-                  setEditingLocation(point)
+                  setFocusedLocationId(point.id)
                   setPendingPoint(null)
                 }}
               >
