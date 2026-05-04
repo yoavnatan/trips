@@ -148,7 +148,7 @@ Shows "Day X selected — click the map to add a location" when a day is open
 
 ### Day header — ⋮ menu (TripDetail.tsx)
 - Chevron (open/close indicator) is on the LEFT of the day name inside the header button
-- A `MoreVertical` (`⋮`) button on the right opens a dropdown with: **Reorder** (when day open + ≥2 locations), **Clear locations** (when day has ≥1 location — removes all locations, keeps the day), **Delete day**
+- A `MoreVertical` (`⋮`) button on the right opens a dropdown with: **Reorder** (when day open + ≥2 locations), **Mark all done / Unmark all** (when day has locations), **Clear locations** (when day has ≥1 location — removes all locations, keeps the day), **Delete day**
 - `menuOpenDayId: string | null` state tracks which day's menu is open; closed via document click listener
 - ⚠️ `.day-list__item` must NOT have `overflow: hidden` — the dropdown is absolutely positioned and would be clipped
 - CSS: `.day-list__menu`, `.day-list__menu-trigger`, `.day-list__menu-dropdown`, `.day-list__menu-item`
@@ -228,13 +228,32 @@ Shows "Day X selected — click the map to add a location" when a day is open
 - Thresholds: hard = activeKm > 8 OR totalKm > 50; moderate = activeKm > 3 OR totalKm > 15; easy = rest
 - CSS: `.day-list__difficulty--easy/moderate/hard`
 
+### Day progress circle (TripDetail.tsx)
+- `DayProgressCircle({ visited, total })` — 20×20 SVG donut in the `day-list__meta` area of every day header (visible collapsed and expanded)
+- Background stroke: `--color-gray-200`; fill stroke: `--color-primary` (blue), turns `--color-success` (green) when all visited
+- Computed inline from `locs` — no extra state; only rendered when `locs.length > 0`
+- CSS: `.day-list__progress-circle`, `.day-list__progress-bg`, `.day-list__progress-fill`, `.day-list__progress-fill--done`
+
+### Day description / summary (TripDetail.tsx)
+- `Day.summary` field (already in DB); edited inline at the top of the expanded day body
+- When closed: shows summary text + "Edit description" button (pencil icon); when no summary: shows "Add description" button
+- `editingSummaryDayId: string | null` + `summaryDraft: string` state in `TripDetail`
+- Saving calls `updateDaySummary(dayId, summary)` server action with optimistic update to `dayItems`
+- CSS: `.day-list__summary-row`, `.day-list__summary-edit-btn`, `.day-summary-editor`, `.day-summary-editor__textarea`, `.day-summary-editor__actions`, `.day-summary-editor__cancel`, `.day-summary-editor__save`
+
+### Mark all done / Unmark all (TripDetail.tsx)
+- In the ⋮ menu: "Mark all done" when not all locations are visited; "Unmark all" when all are visited
+- `handleMarkAllVisited(dayId, visited)` — optimistic update to `dayItems` locations, calls `markAllLocationsVisited(dayId, visited)` server action
+- ⚠️ `SortableLocationItem` has local `visited` state; synced via `useEffect(() => { setVisited(loc.visited) }, [loc.visited])` so optimistic updates propagate without reopening the day
+
 ## Folder Structure
 ```
 /app
   /actions        - addDay, addLocationPoint, createTrip, deleteDay,
                     deleteLocation, clearDayLocations, reorderLocations, reorderDays,
                     updateLocation, updateTrip, updateDayDate, swapDayDates,
-                    toggleLocationVisited, registerUser, signOutAction
+                    toggleLocationVisited, markAllLocationsVisited, updateDaySummary,
+                    registerUser, signOutAction
   /api/auth       - NextAuth route
   /api/place-info - Server route: Google Places + Groq AI info for a location (hours, rating, summary, tip)
   /api/place-name - Server route: Groq translates a place name to standard English
@@ -287,6 +306,9 @@ Shows "Day X selected — click the map to add a location" when a day is open
 29. Per-day dates — optional `date` per day; list always sorted chronologically (`sortDaysByDate`); `CalendarDays` button per day opens inline single-date picker; already-used + out-of-range dates disabled; `updateDayDate` server action persists
 30. Switch days — two-step selection of two day number badges → "Confirm swap" button appears in header; `swapDayDates` server action swaps their dates (or dayNumbers if both undated); toast confirms success
 31. Trip stats summary — `trip-detail__trip-stats` shown in the trip header below destination; displays `N days · M locations`; hidden when no days exist
+32. Day progress circle — SVG donut in every day header showing visited/total ratio; blue → green when fully done; `DayProgressCircle` component; visible in both collapsed and expanded states
+33. Day description — inline editor for `Day.summary`; "Add/Edit description" button at top of expanded day body; `updateDaySummary` server action; optimistic update
+34. Mark all done — ⋮ menu item bulk-marks all day locations visited (or unvisited); `markAllLocationsVisited` server action; optimistic update propagates to `SortableLocationItem` via `useEffect` on `loc.visited`
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)

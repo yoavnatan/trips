@@ -522,6 +522,112 @@
 .day-list__summary {
   font-size: 0.8125rem;
   color: var(--color-gray-500);
+  line-height: 1.5;
+}
+
+.day-list__summary-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.day-list__summary-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: none;
+  border: none;
+  font-size: 0.75rem;
+  color: var(--color-gray-400);
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  align-self: flex-start;
+}
+
+.day-list__summary-edit-btn:hover {
+  color: var(--color-primary);
+}
+
+.day-summary-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.day-summary-editor__textarea {
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--color-gray-300);
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 60px;
+  width: 100%;
+  color: var(--color-gray-900);
+  line-height: 1.5;
+}
+
+.day-summary-editor__textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.day-summary-editor__actions {
+  display: flex;
+  gap: 0.375rem;
+  justify-content: flex-end;
+}
+
+.day-summary-editor__cancel {
+  padding: 0.25rem 0.625rem;
+  background: none;
+  border: 1px solid var(--color-gray-300);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-gray-500);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.day-summary-editor__cancel:hover {
+  border-color: var(--color-gray-400);
+  color: var(--color-gray-700);
+}
+
+.day-summary-editor__save {
+  padding: 0.25rem 0.625rem;
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-white);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.day-summary-editor__save:hover {
+  background: var(--color-primary-hover);
+}
+
+/* Progress circle in day header */
+
+.day-list__progress-circle {
+  flex-shrink: 0;
+  display: block;
+}
+
+.day-list__progress-bg {
+  stroke: var(--color-gray-200);
+}
+
+.day-list__progress-fill {
+  stroke: var(--color-primary);
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+.day-list__progress-fill--done {
+  stroke: var(--color-success);
 }
 
 .day-list__hint {

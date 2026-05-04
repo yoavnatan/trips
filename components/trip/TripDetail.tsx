@@ -21,7 +21,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   Car, Footprints, Bike, Bus, TramFront, Train, Ship,
-  Plane, Clock, CircleCheck,
+  Plane, Clock, CircleCheck, Pencil,
   ChevronDown, ChevronUp, ArrowUpDown, Check, X,
   GripVertical, ArrowLeft, CalendarDays, Share2, MapPin, Navigation,
   MoreVertical, Trash2, Info, ArrowLeftRight,
@@ -41,6 +41,8 @@ import { clearDayLocations } from '@/app/actions/clearDayLocations'
 import { reorderDays } from '@/app/actions/reorderDays'
 import { updateDayDate } from '@/app/actions/updateDayDate'
 import { swapDayDates } from '@/app/actions/swapDayDates'
+import { updateDaySummary } from '@/app/actions/updateDaySummary'
+import { markAllLocationsVisited } from '@/app/actions/markAllLocationsVisited'
 import { haversineDistance, formatDistance } from '@/lib/utils'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import type { TripWithDaysAndLocations, DayWithLocations, ActionState, SuggestedLocation, LocationPoint, TransportMode, RouteGeoJSON } from '@/types'
@@ -100,6 +102,29 @@ function sortDaysByDate(days: DayWithLocations[]): DayWithLocations[] {
   )
   const withoutDates = days.filter((d) => !d.date)
   return [...withDates, ...withoutDates]
+}
+
+function DayProgressCircle({ visited, total }: { visited: number; total: number }) {
+  if (total === 0) return null
+  const r = 7.5
+  const circ = 2 * Math.PI * r
+  const offset = circ * (1 - visited / total)
+  return (
+    <svg className="day-list__progress-circle" width="20" height="20" viewBox="0 0 20 20" aria-label={`${visited} of ${total} visited`}>
+      <circle cx="10" cy="10" r={r} fill="none" strokeWidth="2.5" className="day-list__progress-bg" />
+      {visited > 0 && (
+        <circle
+          cx="10" cy="10" r={r}
+          fill="none" strokeWidth="2.5"
+          strokeDasharray={circ}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform="rotate(-90 10 10)"
+          className={`day-list__progress-fill${visited === total ? ' day-list__progress-fill--done' : ''}`}
+        />
+      )}
+    </svg>
+  )
 }
 
 interface TripDetailProps {
@@ -163,6 +188,8 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   const [switchFirstDayId, setSwitchFirstDayId] = useState<string | null>(null)
   const [switchSecondDayId, setSwitchSecondDayId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [editingSummaryDayId, setEditingSummaryDayId] = useState<string | null>(null)
+  const [summaryDraft, setSummaryDraft] = useState('')
 
   useEffect(() => {
     if (!menuOpenDayId) return
@@ -214,6 +241,32 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   function showToast(msg: string): void {
     setToast(msg)
     setTimeout(() => setToast(null), 2800)
+  }
+
+  async function handleSaveSummary(dayId: string): Promise<void> {
+    const original = dayItems
+    setDayItems(dayItems.map((d) => d.id === dayId ? { ...d, summary: summaryDraft.trim() || null } : d))
+    setEditingSummaryDayId(null)
+    try {
+      await updateDaySummary(dayId, summaryDraft)
+      router.refresh()
+    } catch {
+      setDayItems(original)
+    }
+  }
+
+  async function handleMarkAllVisited(dayId: string, visited: boolean): Promise<void> {
+    const original = dayItems
+    setDayItems(dayItems.map((d) =>
+      d.id !== dayId ? d : { ...d, locations: d.locations.map((l) => ({ ...l, visited })) }
+    ))
+    setMenuOpenDayId(null)
+    try {
+      await markAllLocationsVisited(dayId, visited)
+      router.refresh()
+    } catch {
+      setDayItems(original)
+    }
   }
 
   async function confirmSwap(): Promise<void> {
@@ -471,6 +524,12 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                             {difficulty}
                           </span>
                         )}
+                        {locs.length > 0 && (
+                          <DayProgressCircle
+                            visited={locs.filter((l) => l.visited).length}
+                            total={locs.length}
+                          />
+                        )}
                       </span>
                     </button>
                     {!switchDaysMode && (
@@ -499,6 +558,24 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                             >
                               <ArrowUpDown size={13} />
                               {reorderMode ? 'Stop reordering' : 'Reorder'}
+                            </button>
+                          )}
+                          {locs.length > 0 && !locs.every((l) => l.visited) && (
+                            <button
+                              className="day-list__menu-item"
+                              onClick={(e) => { e.stopPropagation(); void handleMarkAllVisited(day.id, true) }}
+                            >
+                              <CircleCheck size={13} />
+                              Mark all done
+                            </button>
+                          )}
+                          {locs.length > 0 && locs.every((l) => l.visited) && (
+                            <button
+                              className="day-list__menu-item"
+                              onClick={(e) => { e.stopPropagation(); void handleMarkAllVisited(day.id, false) }}
+                            >
+                              <CircleCheck size={13} />
+                              Unmark all
                             </button>
                           )}
                           {locs.length > 0 && (
@@ -546,7 +623,33 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
 
                   {isOpen && (
                     <div className="day-list__body">
-                      {day.summary && <p className="day-list__summary">{day.summary}</p>}
+                      {editingSummaryDayId === day.id ? (
+                        <div className="day-summary-editor">
+                          <textarea
+                            className="day-summary-editor__textarea"
+                            value={summaryDraft}
+                            onChange={(e) => setSummaryDraft(e.target.value)}
+                            placeholder="Add a description for this day…"
+                            rows={3}
+                            autoFocus
+                          />
+                          <div className="day-summary-editor__actions">
+                            <button className="day-summary-editor__cancel" onClick={() => setEditingSummaryDayId(null)}>Cancel</button>
+                            <button className="day-summary-editor__save" onClick={() => void handleSaveSummary(day.id)}>Save</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="day-list__summary-row">
+                          {day.summary && <p className="day-list__summary">{day.summary}</p>}
+                          <button
+                            className="day-list__summary-edit-btn"
+                            onClick={() => { setSummaryDraft(day.summary ?? ''); setEditingSummaryDayId(day.id) }}
+                          >
+                            <Pencil size={11} />
+                            {day.summary ? 'Edit description' : 'Add description'}
+                          </button>
+                        </div>
+                      )}
 
                       {locs.length === 0 ? (
                         <p className="day-list__hint">Click anywhere on the map to add your first location</p>
@@ -1173,6 +1276,7 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
   const [infoOpen, setInfoOpen] = useState(false)
   const [startingAddress, setStartingAddress] = useState('')
   const [visited, setVisited] = useState(loc.visited)
+  useEffect(() => { setVisited(loc.visited) }, [loc.visited])
   const infoCacheKey = `${loc.name}|${city}|${loc.lat}|${loc.lng}`
   const [durationHint, setDurationHint] = useState<string | null>(() => placeInfoCache.get(infoCacheKey)?.ai?.duration ?? null)
   const segmentModeValues = useAtomValue(segmentModesAtom)
