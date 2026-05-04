@@ -112,6 +112,15 @@ dayRouteTotalAtom     // string | null — formatted total distance for open day
 
 ## Key Patterns
 
+### URL state persistence (lib/useUrlSync.ts)
+- `useUrlSync(trips)` hook, called in `Sidebar.tsx`, syncs three Jotai atoms with URL search params
+- URL format: `/?trip=<tripId>&day=<dayId>&loc=<locationId>` — `day` and `loc` are omitted when not set
+- **On mount**: reads URL params, validates IDs against loaded `trips` data, then sets atoms (`selectedTripAtom`, `selectedDayIdAtom`, `focusedLocationIdAtom`)
+- **On atom change**: updates URL via `window.history.replaceState` (no Next.js router event, no history push)
+- Single `useEffect` pattern with `initialized` ref: first run = URL → atoms (then `return`), subsequent runs = atoms → URL
+- On URL restore with `loc`: also sets `focusedLocationAtom` (lat/lng looked up from trips data) so MapView flies to the location
+- ⚠️ Do NOT use `router.replace` here — it triggers Next.js navigation and server re-renders; use `window.history.replaceState` instead
+
 ### Map click without day selected
 → reverse geocodes to city/country level → sets `mapClickedDestinationAtom` → TripForm destination field auto-fills
 

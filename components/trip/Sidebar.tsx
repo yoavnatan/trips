@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useAtom } from 'jotai'
 import { selectedTripAtom, selectedDayIdAtom } from '@/lib/store'
+import { useUrlSync } from '@/lib/useUrlSync'
 import { TripForm } from '@/components/ui/TripForm'
 import { TripList } from '@/components/trip/TripList'
 import { TripDetail } from '@/components/trip/TripDetail'
@@ -19,6 +20,8 @@ export function Sidebar({ trips, user }: SidebarProps) {
   const [selectedTrip, setSelectedTrip] = useAtom(selectedTripAtom)
   const [, setSelectedDayId] = useAtom(selectedDayIdAtom)
   const [showAuth, setShowAuth] = useState(false)
+
+  useUrlSync(trips)
 
   const fullTrip = trips.find((t) => t.id === selectedTrip?.id) ?? null
 

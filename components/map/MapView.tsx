@@ -140,6 +140,7 @@ interface PendingPoint {
 export function MapView({ trips }: MapViewProps) {
   const mapRef = useRef<MapRef>(null)
   const [mounted, setMounted] = useState(false)
+  const [mapLoaded, setMapLoaded] = useState(false)
   const [pendingPoint, setPendingPoint] = useState<PendingPoint | null>(null)
   const [editingLocation, setEditingLocation] = useState<LocationPoint | null>(null)
   const selectedTrip = useAtomValue(selectedTripAtom)
@@ -154,7 +155,7 @@ export function MapView({ trips }: MapViewProps) {
   useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
-    if (!selectedTrip || !mounted) return
+    if (!selectedTrip || !mapLoaded) return
     const freshTrip = trips.find((t) => t.id === selectedTrip.id)
     const allLocs = freshTrip?.days.flatMap((d) => d.locations) ?? []
     if (allLocs.length > 0) {
@@ -164,12 +165,12 @@ export function MapView({ trips }: MapViewProps) {
         if (coords) mapRef.current?.flyTo({ center: coords, zoom: 10, duration: 1800 })
       })
     }
-  }, [selectedTrip?.id, mounted]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedTrip?.id, mapLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { setPendingPoint(null) }, [selectedDayId])
 
   useEffect(() => {
-    if (!mounted) return
+    if (!mapLoaded) return
     if (selectedDayId && currentDay) {
       const locs = [...currentDay.locations].sort((a, b) => a.orderIndex - b.orderIndex)
       if (locs.length > 0) fitLocations(mapRef, locs)
@@ -177,20 +178,20 @@ export function MapView({ trips }: MapViewProps) {
       const allLocs = currentTrip.days.flatMap((d) => d.locations)
       if (allLocs.length > 0) fitLocations(mapRef, allLocs)
     }
-  }, [selectedDayId, mounted]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedDayId, mapLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!focusedLocation || !mounted) return
+    if (!focusedLocation || !mapLoaded) return
     mapRef.current?.flyTo({ center: [focusedLocation.lng, focusedLocation.lat], zoom: 14, duration: 900 })
     setFocusedLocation(null)
-  }, [focusedLocation, mounted]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [focusedLocation, mapLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!suggestedLocation || !mounted) return
+    if (!suggestedLocation || !mapLoaded) return
     mapRef.current?.flyTo({ center: [suggestedLocation.lng, suggestedLocation.lat], zoom: 15, duration: 1000 })
     setPendingPoint({ lat: suggestedLocation.lat, lng: suggestedLocation.lng, suggestions: [suggestedLocation.name], loading: false })
     setSuggestedLocation(null)
-  }, [suggestedLocation, mounted]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [suggestedLocation, mapLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentTrip = trips.find((t) => t.id === selectedTrip?.id) ?? null
   const currentDay = currentTrip?.days.find((d) => d.id === selectedDayId) ?? null
@@ -273,6 +274,7 @@ export function MapView({ trips }: MapViewProps) {
           mapboxAccessToken={TOKEN}
           style={{ width: '100%', height: '100%' }}
           mapStyle="mapbox://styles/mapbox/streets-v12"
+          onLoad={() => setMapLoaded(true)}
           onClick={handleMapClick}
           cursor={selectedDayId ? 'crosshair' : 'grab'}
         >
