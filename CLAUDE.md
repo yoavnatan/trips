@@ -70,6 +70,7 @@ model Day {
   tripId    String
   trip      Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
   dayNumber Int
+  date      DateTime?
   summary   String?
   locations LocationPoint[]
 }
@@ -87,6 +88,9 @@ model LocationPoint {
 ```
 
 **Live DB columns on Trip (verified):** id, userId, title, destination, createdAt, updatedAt, shareToken, startDate, endDate
+
+**Live DB columns on Day:** id, tripId, dayNumber, date, summary
+⚠️ `date` column requires manual SQL migration: `ALTER TABLE "Day" ADD COLUMN IF NOT EXISTS "date" TIMESTAMP(3);`
 
 **Live DB columns on LocationPoint:** id, dayId, lat, lng, orderIndex, name, notes, visited
 ⚠️ `visited` column requires manual SQL migration: `ALTER TABLE "LocationPoint" ADD COLUMN "visited" BOOLEAN NOT NULL DEFAULT false;`
@@ -141,7 +145,6 @@ Shows "Day X selected — click the map to add a location" when a day is open
 - Clicking opens `react-day-picker` in `mode="range"` inline below the header
 - Selecting first date = startDate, second = endDate → saved via `updateTrip(tripId, startDate, endDate)` server action
 - Picker closes automatically once both dates are chosen
-- Each day header shows its derived date: `startDate + (dayNumber - 1) days`
 
 ### Day header — ⋮ menu (TripDetail.tsx)
 - Chevron (open/close indicator) is on the LEFT of the day name inside the header button
@@ -150,15 +153,28 @@ Shows "Day X selected — click the map to add a location" when a day is open
 - ⚠️ `.day-list__item` must NOT have `overflow: hidden` — the dropdown is absolutely positioned and would be clipped
 - CSS: `.day-list__menu`, `.day-list__menu-trigger`, `.day-list__menu-dropdown`, `.day-list__menu-item`
 
-### Reorder days (TripDetail.tsx)
-- `dayItems: DayWithLocations[]` local state — copy of `trip.days`; synced via `useEffect` on `trip.days`
-- `dayReorderMode: boolean` toggled by "Reorder days" button in the days section header (shows when ≥2 days)
-- Day list wrapped in `DndContext` + `SortableContext`; each `<li>` rendered by `SortableDayItem` component
-- `SortableDayItem` uses render-prop `children: (dragHandle: ReactNode) => ReactNode`; receives `listeners`/`attributes` from `useSortable` and conditionally renders `GripVertical` handle
-- Drag handle appears to the left of the day header button when `dayReorderMode` is on
-- Day number displayed as `dayIdx + 1` (visual position) so optimistic reorder looks correct immediately
-- `handleDayDragEnd`: `arrayMove` → optimistic `setDayItems` → `reorderDays` server action → `router.refresh()`; reverts on error
-- CSS: `.trip-detail__days-header`, `.trip-detail__reorder-days-btn`, `.day-list__drag-handle`, `.day-list__reorder-error`
+### Per-day dates (TripDetail.tsx)
+- Each day has an optional `date` field (DB: `Day.date DateTime?`)
+- `sortDaysByDate(days)` helper: dated days sorted chronologically first, undated days after (preserving their relative order)
+- `useEffect` on `trip.days` calls `sortDaysByDate` and auto-corrects `dayNumber` if order drifted
+- `CalendarDays` icon button (`.day-list__cal-btn`) in each day header row opens an inline `react-day-picker` in `mode="single"` below the header; hidden in "Switch days" mode
+- Already-used dates + dates outside trip range are disabled in the picker
+- "Clear date" link below the picker clears the day's date
+- Selecting a date calls `updateDayDate` server action, re-sorts list, updates `dayNumber` if order changed
+- When a custom date is set: badge turns blue (`.day-list__date--custom`); calendar icon turns primary color
+
+### Switch days (TripDetail.tsx)
+- **No drag-reorder for days** — replaced by a two-step "Switch days" flow
+- "Switch days" button in days header (shown when ≥2 days); `switchDaysMode: boolean`, `switchFirstDayId`, `switchSecondDayId` states
+- In switch mode: circular numbered badge (`.day-list__num-badge`) appears on the left of each day header
+- Click first badge → highlights blue; click second badge → both highlighted; top button becomes "Confirm swap" (filled primary)
+- "Confirm swap" calls `swapDayDates` server action: swaps `date` fields between the two days (both undated → swaps `dayNumber` instead); re-sorts list optimistically; shows toast on success
+- Clicking an already-selected badge deselects it; "Cancel" exits without swapping
+- CSS: `.day-list__num-badge`, `.day-list__num-badge--selected`, `.trip-detail__reorder-days-btn--confirm`
+
+### Toast notification (TripDetail.tsx)
+- `toast: string | null` state; `showToast(msg)` sets it and clears after 2.8s
+- Renders as `.trip-toast` — fixed, bottom-center, dark pill with check icon, slide-up animation, `pointer-events: none`
 
 ### Routing inside each location (TripDetail.tsx)
 - Route UI lives INSIDE each location item, not between locations
@@ -217,7 +233,8 @@ Shows "Day X selected — click the map to add a location" when a day is open
 /app
   /actions        - addDay, addLocationPoint, createTrip, deleteDay,
                     deleteLocation, clearDayLocations, reorderLocations, reorderDays,
-                    updateLocation, updateTrip, toggleLocationVisited, registerUser, signOutAction
+                    updateLocation, updateTrip, updateDayDate, swapDayDates,
+                    toggleLocationVisited, registerUser, signOutAction
   /api/auth       - NextAuth route
   /api/place-info - Server route: Google Places + Groq AI info for a location (hours, rating, summary, tip)
   /api/place-name - Server route: Groq translates a place name to standard English
@@ -241,7 +258,7 @@ Shows "Day X selected — click the map to add a location" when a day is open
 ## Features (all implemented)
 1. Auth — email/password + Google OAuth
 2. Create/manage trips
-3. Add days with optional summary
+3. Add days (no summary input — summary field removed from add-day form)
 4. Pin locations on Mapbox map (click, reorder via drag, delete)
 5. Route lines per day on map — colored by transport mode
 6. Notes on locations (inline editor)
@@ -257,7 +274,7 @@ Shows "Day X selected — click the map to add a location" when a day is open
 16. Full CSS variable system — all colors in `styles/setup/variables.css`; **zero hardcoded hex outside that file**; `--color-focused` (amber) and `--color-success` (green) used for focused/visited states; `--color-day-0` … `--color-day-9` for map overview day palette
 17. DM Sans font via `next/font/google`, loaded as `--font-sans` CSS variable
 18. Lucide icons throughout — no emoji
-19. Trip date range — `CalendarDays` button opens `react-day-picker` range picker; each day shows its derived date
+19. Trip date range — `CalendarDays` button opens `react-day-picker` range picker
 20. Routing inside each location — directions UI per location item; first location has "Starting from" input
 21. Day header ⋮ menu — reorder, clear locations, and delete actions in dropdown; chevron moved to left of day name; deleting a day renumbers all subsequent days
 22. Location selection highlight — clicking a location name or number badge sets `focusedLocationIdAtom`; number badge turns amber, map marker turns amber + scales up
@@ -267,7 +284,9 @@ Shows "Day X selected — click the map to add a location" when a day is open
 26. Duration hint — pill badge in nav-row before ⓘ button showing AI estimated visit time; sourced from `placeInfoCache`, persists after panel closes
 27. Visited toggle — `CircleCheck` button per location; persisted to DB via `toggleLocationVisited`; number badge + map marker turn green (`--color-success`) when visited
 28. Map overview mode — when a trip is open but no day is selected, MapView shows ALL days' locations simultaneously; each day gets a color from `DAY_COLORS` (10-color palette in variables.css as `--color-day-0` … `--color-day-9`); straight-line dashed routes connect locations within each day; entering a trip auto-fits bounds to all locations; deselecting a day returns to overview
-29. Reorder days — "Reorder days" button in the days header (visible when ≥2 days); toggles `dayReorderMode`; wraps day list in `DndContext`/`SortableContext`; each day rendered via `SortableDayItem` (render-prop component, same dnd-kit pattern as locations); day numbers display as visual position (`dayIdx + 1`) for correct optimistic UI; `reorderDays` server action updates `Day.dayNumber` in DB transaction
+29. Per-day dates — optional `date` per day; list always sorted chronologically (`sortDaysByDate`); `CalendarDays` button per day opens inline single-date picker; already-used + out-of-range dates disabled; `updateDayDate` server action persists
+30. Switch days — two-step selection of two day number badges → "Confirm swap" button appears in header; `swapDayDates` server action swaps their dates (or dayNumbers if both undated); toast confirms success
+31. Trip stats summary — `trip-detail__trip-stats` shown in the trip header below destination; displays `N days · M locations`; hidden when no days exist
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)

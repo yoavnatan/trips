@@ -130,6 +130,12 @@
   color: var(--color-gray-500);
 }
 
+.trip-detail__trip-stats {
+  font-size: 0.75rem;
+  color: var(--color-gray-400);
+  margin-top: 0.2rem;
+}
+
 .trip-detail__days-header {
   display: flex;
   align-items: center;
@@ -145,6 +151,7 @@
   color: var(--color-gray-500);
   margin-bottom: 0;
 }
+
 
 .trip-detail__reorder-days-btn {
   display: flex;
@@ -169,6 +176,17 @@
   color: var(--color-primary);
   border-color: var(--color-primary);
   background: var(--color-primary-light);
+}
+
+.trip-detail__reorder-days-btn--confirm {
+  color: var(--color-white);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.trip-detail__reorder-days-btn--confirm:hover {
+  background: var(--color-primary-hover, var(--color-primary));
+  color: var(--color-white);
 }
 
 .trip-detail__empty {
@@ -247,6 +265,100 @@
   font-size: 0.8125rem;
   color: var(--color-error);
   padding: 0.25rem 1rem;
+}
+
+.day-list__num-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--color-gray-300);
+  background: var(--color-white);
+  color: var(--color-gray-600);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.day-list__num-badge:not(.day-list__num-badge--selected):hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.day-list__num-badge--selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.day-list__num-badge--selected:hover {
+  opacity: 0.85;
+}
+
+.day-list__cal-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  color: var(--color-gray-400);
+  cursor: pointer;
+  border-radius: 0.25rem;
+  flex-shrink: 0;
+}
+
+.day-list__cal-btn:hover {
+  background: var(--color-gray-100);
+  color: var(--color-gray-700);
+}
+
+.day-list__cal-btn--set {
+  color: var(--color-primary);
+}
+
+.day-list__date--custom {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.day-list__day-picker-wrap {
+  border-top: 1px solid var(--color-gray-100);
+  background: var(--color-white);
+}
+
+.day-list__day-picker-wrap .rdp-root {
+  --rdp-accent-color: var(--color-primary);
+  --rdp-accent-background-color: var(--color-primary-light);
+  --rdp-selected-border: var(--color-primary);
+  --rdp-today-color: var(--color-primary);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+}
+
+.day-list__day-picker-clear {
+  display: block;
+  width: 100%;
+  padding: 0.25rem 0.75rem 0.625rem;
+  background: none;
+  border: none;
+  font-size: 0.75rem;
+  color: var(--color-gray-400);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.day-list__day-picker-clear:hover {
+  color: var(--color-error);
 }
 
 .day-list__menu {
@@ -1329,4 +1441,31 @@
 .add-day-form__submit:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Toast notification */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.trip-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: var(--color-gray-900);
+  color: var(--color-white);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  z-index: 200;
+  animation: toast-in 0.2s ease;
+  white-space: nowrap;
 }

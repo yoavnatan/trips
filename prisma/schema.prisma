@@ -35,6 +35,7 @@ model Day {
   tripId    String
   trip      Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
   dayNumber Int
+  date      DateTime?
   summary   String?
   locations LocationPoint[]
 }

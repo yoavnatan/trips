@@ -24,7 +24,7 @@ import {
   Plane, Clock, CircleCheck,
   ChevronDown, ChevronUp, ArrowUpDown, Check, X,
   GripVertical, ArrowLeft, CalendarDays, Share2, MapPin, Navigation,
-  MoreVertical, Trash2, Info,
+  MoreVertical, Trash2, Info, ArrowLeftRight,
 } from 'lucide-react'
 import { DayPicker } from 'react-day-picker'
 import type { DateRange } from 'react-day-picker'
@@ -39,6 +39,8 @@ import { updateTrip } from '@/app/actions/updateTrip'
 import { toggleLocationVisited } from '@/app/actions/toggleLocationVisited'
 import { clearDayLocations } from '@/app/actions/clearDayLocations'
 import { reorderDays } from '@/app/actions/reorderDays'
+import { updateDayDate } from '@/app/actions/updateDayDate'
+import { swapDayDates } from '@/app/actions/swapDayDates'
 import { haversineDistance, formatDistance } from '@/lib/utils'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import type { TripWithDaysAndLocations, DayWithLocations, ActionState, SuggestedLocation, LocationPoint, TransportMode, RouteGeoJSON } from '@/types'
@@ -91,10 +93,13 @@ function formatTripDateRange(startDate: Date | null, endDate: Date | null): stri
   return `${fmt(startDate)} – ${new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: endYear !== new Date(startDate).getFullYear() ? 'numeric' : undefined })}`
 }
 
-function getDayDate(startDate: Date, dayNumber: number): string {
-  const d = new Date(startDate)
-  d.setDate(d.getDate() + dayNumber - 1)
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+
+function sortDaysByDate(days: DayWithLocations[]): DayWithLocations[] {
+  const withDates = [...days.filter((d) => d.date)].sort(
+    (a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime()
+  )
+  const withoutDates = days.filter((d) => !d.date)
+  return [...withDates, ...withoutDates]
 }
 
 interface TripDetailProps {
@@ -150,12 +155,14 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   const [confirmModal, setConfirmModal] = useState<ConfirmState | null>(null)
   const [copied, setCopied] = useState(false)
   const [reorderMode, setReorderMode] = useState(false)
-  const [dayReorderMode, setDayReorderMode] = useState(false)
-  const [dayItems, setDayItems] = useState<DayWithLocations[]>([...trip.days])
-  const [dayReorderError, setDayReorderError] = useState<string | null>(null)
+  const [dayItems, setDayItems] = useState<DayWithLocations[]>(sortDaysByDate([...trip.days]))
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [menuOpenDayId, setMenuOpenDayId] = useState<string | null>(null)
-  const daySensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const [dayDatePickerId, setDayDatePickerId] = useState<string | null>(null)
+  const [switchDaysMode, setSwitchDaysMode] = useState(false)
+  const [switchFirstDayId, setSwitchFirstDayId] = useState<string | null>(null)
+  const [switchSecondDayId, setSwitchSecondDayId] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
     if (!menuOpenDayId) return
@@ -164,27 +171,83 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
     return () => document.removeEventListener('click', handleOutsideClick)
   }, [menuOpenDayId])
 
-  useEffect(() => { setDayItems([...trip.days]) }, [trip.days])
+  useEffect(() => {
+    if (!dayDatePickerId) return
+    function handleOutsideClick() { setDayDatePickerId(null) }
+    document.addEventListener('click', handleOutsideClick)
+    return () => document.removeEventListener('click', handleOutsideClick)
+  }, [dayDatePickerId])
 
-  async function handleDayDragEnd(event: DragEndEvent): Promise<void> {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
+  useEffect(() => {
+    const sorted = sortDaysByDate([...trip.days])
+    setDayItems(sorted)
+    const needsReorder = sorted.some((d, i) => d.dayNumber !== i + 1)
+    if (needsReorder) void reorderDays(sorted.map((d, i) => ({ id: d.id, dayNumber: i + 1 })))
+  }, [trip.days])
 
-    const oldIndex = dayItems.findIndex((d) => d.id === active.id)
-    const newIndex = dayItems.findIndex((d) => d.id === over.id)
-    const reordered = arrayMove(dayItems, oldIndex, newIndex)
+  async function handleDayDateSelect(dayId: string, date: Date | undefined): Promise<void> {
+    const newDate = date ?? null
+    const updated = dayItems.map((d) => d.id === dayId ? { ...d, date: newDate } : d)
+    const sorted = sortDaysByDate(updated)
     const original = dayItems
-
-    setDayItems(reordered)
-    setDayReorderError(null)
-
+    setDayItems(sorted)
+    setDayDatePickerId(null)
     try {
-      const updates = reordered.map((day, i) => ({ id: day.id, dayNumber: i + 1 }))
-      await reorderDays(updates)
+      await updateDayDate(dayId, newDate)
+      const orderChanged = sorted.some((d, i) => d.id !== original[i]?.id)
+      if (orderChanged) await reorderDays(sorted.map((d, i) => ({ id: d.id, dayNumber: i + 1 })))
       router.refresh()
     } catch {
       setDayItems(original)
-      setDayReorderError('Failed to save order — reverted.')
+    }
+  }
+
+  function handleSwitchDayClick(dayId: string): void {
+    // Toggle deselect
+    if (switchFirstDayId === dayId) { setSwitchFirstDayId(switchSecondDayId); setSwitchSecondDayId(null); return }
+    if (switchSecondDayId === dayId) { setSwitchSecondDayId(null); return }
+    // Select
+    if (!switchFirstDayId) { setSwitchFirstDayId(dayId); return }
+    setSwitchSecondDayId(dayId)
+  }
+
+  function showToast(msg: string): void {
+    setToast(msg)
+    setTimeout(() => setToast(null), 2800)
+  }
+
+  async function confirmSwap(): Promise<void> {
+    if (!switchFirstDayId || !switchSecondDayId) return
+    const aIdx = dayItems.findIndex((d) => d.id === switchFirstDayId)
+    const bIdx = dayItems.findIndex((d) => d.id === switchSecondDayId)
+    const dayA = dayItems[aIdx]
+    const dayB = dayItems[bIdx]
+    const original = dayItems
+
+    const swapped = dayItems.map((d) => {
+      if (d.id === switchFirstDayId) return { ...d, date: dayB.date }
+      if (d.id === switchSecondDayId) return { ...d, date: dayA.date }
+      return d
+    })
+    const toSort = (!dayA.date && !dayB.date)
+      ? swapped.map((_, i) => {
+          if (i === aIdx) return swapped[bIdx]
+          if (i === bIdx) return swapped[aIdx]
+          return swapped[i]
+        })
+      : swapped
+
+    setDayItems(sortDaysByDate(toSort))
+    setSwitchFirstDayId(null)
+    setSwitchSecondDayId(null)
+    setSwitchDaysMode(false)
+
+    try {
+      await swapDayDates(switchFirstDayId, switchSecondDayId)
+      showToast('Days switched')
+      router.refresh()
+    } catch {
+      setDayItems(original)
     }
   }
 
@@ -313,6 +376,11 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
           </div>
         </div>
         <p className="trip-detail__destination">{trip.destination}</p>
+        {dayItems.length > 0 && (
+          <p className="trip-detail__trip-stats">
+            {dayItems.length} {dayItems.length === 1 ? 'day' : 'days'} · {dayItems.reduce((sum, d) => sum + d.locations.length, 0)} locations
+          </p>
+        )}
 
         {showDatePicker && (
           <div className="trip-detail__date-picker-wrap">
@@ -328,15 +396,23 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
       <div className="trip-detail__days">
         <div className="trip-detail__days-header">
           <h3 className="trip-detail__days-heading">Days</h3>
-          {dayItems.length >= 2 && (
+          {dayItems.length >= 2 && switchDaysMode && switchFirstDayId && switchSecondDayId ? (
             <button
-              className={`trip-detail__reorder-days-btn${dayReorderMode ? ' trip-detail__reorder-days-btn--active' : ''}`}
-              onClick={() => setDayReorderMode((m) => !m)}
+              className="trip-detail__reorder-days-btn trip-detail__reorder-days-btn--confirm"
+              onClick={() => void confirmSwap()}
             >
-              <ArrowUpDown size={13} />
-              {dayReorderMode ? 'Done' : 'Reorder days'}
+              <Check size={13} />
+              Confirm swap
             </button>
-          )}
+          ) : dayItems.length >= 2 ? (
+            <button
+              className={`trip-detail__reorder-days-btn${switchDaysMode ? ' trip-detail__reorder-days-btn--active' : ''}`}
+              onClick={() => { setSwitchDaysMode((m) => !m); setSwitchFirstDayId(null); setSwitchSecondDayId(null) }}
+            >
+              <ArrowLeftRight size={13} />
+              {switchDaysMode ? 'Cancel' : 'Switch days'}
+            </button>
+          ) : null}
         </div>
         {dayItems.length === 0 ? (
           <div className="trip-detail__empty">
@@ -344,12 +420,11 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
             <p className="trip-detail__empty-hint">Add your first day below, then click the map to drop location pins.</p>
           </div>
         ) : (
-          <DndContext sensors={daySensors} collisionDetection={closestCenter} onDragEnd={(e) => void handleDayDragEnd(e)}>
-            <SortableContext items={dayItems.map((d) => d.id)} strategy={verticalListSortingStrategy}>
-              <ul className="day-list">
-                {dayItems.map((day, dayIdx) => {
-                  const isOpen = day.id === selectedDayId
+          <ul className="day-list">
+            {dayItems.map((day, dayIdx) => {
+              const isOpen = day.id === selectedDayId
               const locs = [...day.locations].sort((a, b) => a.orderIndex - b.orderIndex)
+              const customDate = day.date ? new Date(day.date) : null
 
               let totalDist = 0
               for (let i = 1; i < locs.length; i++) {
@@ -359,20 +434,28 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
               const lastLoc = locs[locs.length - 1]
               const difficulty = computeDayDifficulty(locs, segmentModes)
               const displayNumber = dayIdx + 1
-              const displayDate = startDate ? getDayDate(startDate, displayNumber) : null
+              const displayDate = customDate
+                ? customDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                : null
 
               return (
-                <SortableDayItem key={day.id} id={day.id} className={`day-list__item${isOpen ? ' day-list__item--active' : ''}`} dayReorderMode={dayReorderMode}>
-                  {(dragHandle) => (<>
+                <li key={day.id} className={`day-list__item${isOpen ? ' day-list__item--active' : ''}`}>
                   <div className="day-list__header-row">
-                    {dragHandle}
+                    {switchDaysMode && (
+                      <button
+                        className={`day-list__num-badge${switchFirstDayId === day.id || switchSecondDayId === day.id ? ' day-list__num-badge--selected' : ''}`}
+                        onClick={(e) => { e.stopPropagation(); handleSwitchDayClick(day.id) }}
+                      >
+                        {displayNumber}
+                      </button>
+                    )}
                     <button className="day-list__header" onClick={() => handleDayClick(day.id)}>
                       <span className="day-list__chevron">
                         {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       </span>
                       <span className="day-list__number-col">
                         <span className="day-list__number">Day {displayNumber}</span>
-                        {displayDate && <span className="day-list__date">{displayDate}</span>}
+                        {displayDate && <span className={`day-list__date${customDate ? ' day-list__date--custom' : ''}`}>{displayDate}</span>}
                       </span>
                       <span className="day-list__meta">
                         <span className="day-list__count">
@@ -390,6 +473,15 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                         )}
                       </span>
                     </button>
+                    {!switchDaysMode && (
+                      <button
+                        className={`day-list__cal-btn${customDate ? ' day-list__cal-btn--set' : ''}`}
+                        onClick={(e) => { e.stopPropagation(); setDayDatePickerId(dayDatePickerId === day.id ? null : day.id); setMenuOpenDayId(null) }}
+                        title={customDate ? 'Change date' : 'Set date'}
+                      >
+                        <CalendarDays size={14} />
+                      </button>
+                    )}
                     <div className="day-list__menu">
                       <button
                         className="day-list__menu-trigger"
@@ -430,6 +522,27 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                       )}
                     </div>
                   </div>
+
+                  {dayDatePickerId === day.id && (
+                    <div className="day-list__day-picker-wrap" onClick={(e) => e.stopPropagation()}>
+                      <DayPicker
+                        mode="single"
+                        selected={customDate ?? undefined}
+                        onSelect={(date) => void handleDayDateSelect(day.id, date)}
+                        disabled={[
+                          ...dayItems.filter((d) => d.id !== day.id && d.date).map((d) => new Date(d.date!)),
+                          ...(startDate ? [{ before: startDate }] : []),
+                          ...(endDate ? [{ after: endDate }] : []),
+                        ]}
+                        defaultMonth={customDate ?? startDate ?? undefined}
+                      />
+                      {customDate && (
+                        <button className="day-list__day-picker-clear" onClick={() => void handleDayDateSelect(day.id, undefined)}>
+                          Clear date
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {isOpen && (
                     <div className="day-list__body">
@@ -479,15 +592,11 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                       <p className="day-list__hint">Click the map to add another location</p>
                     </div>
                   )}
-                  </>)}
-                </SortableDayItem>
+                </li>
               )
             })}
-              </ul>
-            </SortableContext>
-          </DndContext>
+          </ul>
         )}
-        {dayReorderError && <p className="day-list__reorder-error">{dayReorderError}</p>}
       </div>
 
       {confirmModal && (
@@ -501,17 +610,18 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
 
       <form className="add-day-form" action={formAction}>
         <input type="hidden" name="tripId" value={trip.id} />
-        <input
-          name="summary"
-          type="text"
-          placeholder="Day summary (optional)"
-          className="add-day-form__input"
-        />
         {state.error && <p className="add-day-form__error">{state.error}</p>}
         <button type="submit" disabled={pending} className="add-day-form__submit">
           {pending ? 'Adding…' : '+ Add Day'}
         </button>
       </form>
+
+      {toast && (
+        <div className="trip-toast" role="status">
+          <Check size={14} />
+          {toast}
+        </div>
+      )}
     </div>
   )
 }
@@ -948,31 +1058,6 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
   ) : null
 }
 
-function SortableDayItem({
-  id, className, dayReorderMode, children,
-}: {
-  id: string
-  className: string
-  dayReorderMode: boolean
-  children: (dragHandle: React.ReactNode) => React.ReactNode
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  }
-  const handle = dayReorderMode ? (
-    <span className="day-list__drag-handle" {...attributes} {...listeners}>
-      <GripVertical size={16} />
-    </span>
-  ) : null
-  return (
-    <li ref={setNodeRef} style={style} className={className}>
-      {children(handle)}
-    </li>
-  )
-}
 
 interface SortableLocationListProps {
   locs: LocationPoint[]

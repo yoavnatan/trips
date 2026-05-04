@@ -25,6 +25,7 @@ export interface Day {
   id: string
   tripId: string
   dayNumber: number
+  date: Date | null
   summary: string | null
 }
 
