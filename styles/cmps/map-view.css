@@ -50,6 +50,17 @@
   background-color: var(--color-success);
 }
 
+.map-marker--day-0 { background-color: var(--color-day-0); }
+.map-marker--day-1 { background-color: var(--color-day-1); }
+.map-marker--day-2 { background-color: var(--color-day-2); }
+.map-marker--day-3 { background-color: var(--color-day-3); }
+.map-marker--day-4 { background-color: var(--color-day-4); }
+.map-marker--day-5 { background-color: var(--color-day-5); }
+.map-marker--day-6 { background-color: var(--color-day-6); }
+.map-marker--day-7 { background-color: var(--color-day-7); }
+.map-marker--day-8 { background-color: var(--color-day-8); }
+.map-marker--day-9 { background-color: var(--color-day-9); }
+
 /* Add-point popup form */
 
 .add-point-form {

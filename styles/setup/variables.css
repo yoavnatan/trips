@@ -54,6 +54,18 @@
   --color-transit-light: #ede9fe;
   --color-transit-dark: #5b21b6;
 
+  /* Day palette — overview map mode (10 colours, cycling) */
+  --color-day-0: #2563eb;
+  --color-day-1: #e11d48;
+  --color-day-2: #16a34a;
+  --color-day-3: #f97316;
+  --color-day-4: #7c3aed;
+  --color-day-5: #0d9488;
+  --color-day-6: #ca8a04;
+  --color-day-7: #9333ea;
+  --color-day-8: #0891b2;
+  --color-day-9: #b45309;
+
   /* Overlays */
   --color-overlay: rgba(0, 0, 0, 0.45);
   --color-overlay-dark: rgba(0, 0, 0, 0.65);

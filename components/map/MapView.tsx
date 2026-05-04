@@ -23,6 +23,12 @@ const ROUTE_COLORS: Record<TransportMode, string> = {
   flight: '#f97316',
 }
 
+const DAY_COLORS = [
+  '#2563eb', '#e11d48', '#16a34a', '#f97316',
+  '#7c3aed', '#0d9488', '#ca8a04', '#9333ea',
+  '#0891b2', '#b45309',
+]
+
 type RenderedFeature = {
   layer: { id: string }
   properties: Record<string, string> | null
@@ -149,18 +155,28 @@ export function MapView({ trips }: MapViewProps) {
 
   useEffect(() => {
     if (!selectedTrip || !mounted) return
-    forwardGeocode(selectedTrip.destination).then((coords) => {
-      if (coords) mapRef.current?.flyTo({ center: coords, zoom: 10, duration: 1800 })
-    })
+    const freshTrip = trips.find((t) => t.id === selectedTrip.id)
+    const allLocs = freshTrip?.days.flatMap((d) => d.locations) ?? []
+    if (allLocs.length > 0) {
+      fitLocations(mapRef, allLocs)
+    } else {
+      forwardGeocode(selectedTrip.destination).then((coords) => {
+        if (coords) mapRef.current?.flyTo({ center: coords, zoom: 10, duration: 1800 })
+      })
+    }
   }, [selectedTrip?.id, mounted]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { setPendingPoint(null) }, [selectedDayId])
 
   useEffect(() => {
-    if (!selectedDayId || !mounted || !currentDay) return
-    const locs = [...currentDay.locations].sort((a, b) => a.orderIndex - b.orderIndex)
-    if (locs.length === 0) return
-    fitLocations(mapRef, locs)
+    if (!mounted) return
+    if (selectedDayId && currentDay) {
+      const locs = [...currentDay.locations].sort((a, b) => a.orderIndex - b.orderIndex)
+      if (locs.length > 0) fitLocations(mapRef, locs)
+    } else if (!selectedDayId && currentTrip) {
+      const allLocs = currentTrip.days.flatMap((d) => d.locations)
+      if (allLocs.length > 0) fitLocations(mapRef, allLocs)
+    }
   }, [selectedDayId, mounted]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -179,6 +195,33 @@ export function MapView({ trips }: MapViewProps) {
   const currentTrip = trips.find((t) => t.id === selectedTrip?.id) ?? null
   const currentDay = currentTrip?.days.find((d) => d.id === selectedDayId) ?? null
   const locations = [...(currentDay?.locations ?? [])].sort((a, b) => a.orderIndex - b.orderIndex)
+
+  const isOverview = !selectedDayId && !!currentTrip
+
+  const overviewDays = isOverview
+    ? currentTrip!.days
+        .slice()
+        .sort((a, b) => a.dayNumber - b.dayNumber)
+        .map((day) => ({
+          ...day,
+          locations: [...day.locations].sort((a, b) => a.orderIndex - b.orderIndex),
+        }))
+    : []
+
+  const overviewRouteGeoJSON = {
+    type: 'FeatureCollection' as const,
+    features: overviewDays.flatMap((day, dayIdx) => {
+      if (day.locations.length < 2) return []
+      return [{
+        type: 'Feature' as const,
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: day.locations.map((l) => [l.lng, l.lat]),
+        },
+        properties: { color: DAY_COLORS[dayIdx % DAY_COLORS.length] },
+      }]
+    }),
+  }
 
   const routeGeoJSON = {
     type: 'FeatureCollection' as const,
@@ -235,9 +278,42 @@ export function MapView({ trips }: MapViewProps) {
         >
           <NavigationControl position="top-right" />
 
-          {locations.length > 1 && (
+          {/* Overview mode: all days with distinct colours */}
+          {isOverview && overviewRouteGeoJSON.features.length > 0 && (
+            <Source id="overview-route" type="geojson" data={overviewRouteGeoJSON}>
+              <Layer
+                id="overview-route-lines"
+                type="line"
+                paint={{
+                  'line-color': ['get', 'color'],
+                  'line-width': 3,
+                  'line-opacity': 0.7,
+                  'line-dasharray': [3, 1.5],
+                }}
+              />
+            </Source>
+          )}
+
+          {isOverview && overviewDays.map((day, dayIdx) =>
+            day.locations.map((point, locIdx) => (
+              <Marker key={point.id} latitude={point.lat} longitude={point.lng}>
+                <div
+                  className={`map-marker map-marker--day-${dayIdx % 10}`}
+                  title={`Day ${day.dayNumber}: ${point.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    mapRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 14, duration: 900 })
+                  }}
+                >
+                  <span className="map-marker__number">{locIdx + 1}</span>
+                </div>
+              </Marker>
+            ))
+          )}
+
+          {/* Single-day mode: current day route + markers */}
+          {!isOverview && locations.length > 1 && (
             <Source id="route" type="geojson" data={dayRouteGeoJSON ?? routeGeoJSON}>
-              {/* Driving / walking / cycling — single solid line */}
               <Layer
                 id="route-main"
                 type="line"
@@ -259,14 +335,12 @@ export function MapView({ trips }: MapViewProps) {
                   : { 'line-color': '#2563eb', 'line-width': 2, 'line-dasharray': [2, 1] }
                 }
               />
-              {/* Transit — solid purple line between stops */}
               <Layer
                 id="route-transit"
                 type="line"
                 filter={['==', ['get', 'segmentType'], 'transit']}
                 paint={{ 'line-color': ROUTE_COLORS.transit, 'line-width': 3, 'line-opacity': 0.9 }}
               />
-              {/* Walk legs to/from stops — dashed gray */}
               <Layer
                 id="route-walk"
                 type="line"
@@ -276,7 +350,7 @@ export function MapView({ trips }: MapViewProps) {
             </Source>
           )}
 
-          {locations.map((point, index) => (
+          {!isOverview && locations.map((point, index) => (
             <Marker key={point.id} latitude={point.lat} longitude={point.lng}>
               <div
                 className={`map-marker${focusedLocationId === point.id ? ' map-marker--focused' : point.visited ? ' map-marker--visited' : ''}`}

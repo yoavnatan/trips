@@ -130,13 +130,45 @@
   color: var(--color-gray-500);
 }
 
+.trip-detail__days-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
 .trip-detail__days-heading {
   font-size: 0.875rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-gray-500);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
+}
+
+.trip-detail__reorder-days-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-gray-500);
+  background: none;
+  border: 1px solid var(--color-gray-300);
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+.trip-detail__reorder-days-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.trip-detail__reorder-days-btn--active {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
 }
 
 .trip-detail__empty {
@@ -195,6 +227,26 @@
   cursor: pointer;
   text-align: left;
   min-width: 0;
+}
+
+.day-list__drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem;
+  color: var(--color-gray-400);
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.day-list__drag-handle:active {
+  cursor: grabbing;
+}
+
+.day-list__reorder-error {
+  font-size: 0.8125rem;
+  color: var(--color-error);
+  padding: 0.25rem 1rem;
 }
 
 .day-list__menu {

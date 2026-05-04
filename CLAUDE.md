@@ -121,6 +121,15 @@ Controlled input with 300ms debounced Mapbox forward geocode autocomplete (`type
 - Map marker gets class `map-marker--focused` (`--color-focused` amber + scale 1.18); number badge gets `.location-list__num--focused`
 - focused always takes priority over visited in the class logic
 
+### Map overview mode (MapView.tsx)
+- Default state when trip is open but no day is selected (`isOverview = !selectedDayId && !!currentTrip`)
+- Shows all days' locations as colored markers (`map-marker--day-N` class, N = dayIndex % 10)
+- Shows dashed straight-line GeoJSON routes per day, colored via `['get', 'color']` data-driven expression
+- `DAY_COLORS` array in MapView.tsx mirrors the `--color-day-N` CSS variables in variables.css
+- Clicking a marker in overview mode does flyTo only (no edit popup)
+- Entering a trip: fits bounds to all locations if any exist, else flies to destination city
+- Deselecting a day: also fits bounds to all locations
+
 ### Day selected
 → MapView fitBounds to all day locations (padding 80, maxZoom 15)
 
@@ -140,6 +149,16 @@ Shows "Day X selected — click the map to add a location" when a day is open
 - `menuOpenDayId: string | null` state tracks which day's menu is open; closed via document click listener
 - ⚠️ `.day-list__item` must NOT have `overflow: hidden` — the dropdown is absolutely positioned and would be clipped
 - CSS: `.day-list__menu`, `.day-list__menu-trigger`, `.day-list__menu-dropdown`, `.day-list__menu-item`
+
+### Reorder days (TripDetail.tsx)
+- `dayItems: DayWithLocations[]` local state — copy of `trip.days`; synced via `useEffect` on `trip.days`
+- `dayReorderMode: boolean` toggled by "Reorder days" button in the days section header (shows when ≥2 days)
+- Day list wrapped in `DndContext` + `SortableContext`; each `<li>` rendered by `SortableDayItem` component
+- `SortableDayItem` uses render-prop `children: (dragHandle: ReactNode) => ReactNode`; receives `listeners`/`attributes` from `useSortable` and conditionally renders `GripVertical` handle
+- Drag handle appears to the left of the day header button when `dayReorderMode` is on
+- Day number displayed as `dayIdx + 1` (visual position) so optimistic reorder looks correct immediately
+- `handleDayDragEnd`: `arrayMove` → optimistic `setDayItems` → `reorderDays` server action → `router.refresh()`; reverts on error
+- CSS: `.trip-detail__days-header`, `.trip-detail__reorder-days-btn`, `.day-list__drag-handle`, `.day-list__reorder-error`
 
 ### Routing inside each location (TripDetail.tsx)
 - Route UI lives INSIDE each location item, not between locations
@@ -197,8 +216,8 @@ Shows "Day X selected — click the map to add a location" when a day is open
 ```
 /app
   /actions        - addDay, addLocationPoint, createTrip, deleteDay,
-                    deleteLocation, clearDayLocations, reorderLocations, updateLocation,
-                    updateTrip, toggleLocationVisited, registerUser, signOutAction
+                    deleteLocation, clearDayLocations, reorderLocations, reorderDays,
+                    updateLocation, updateTrip, toggleLocationVisited, registerUser, signOutAction
   /api/auth       - NextAuth route
   /api/place-info - Server route: Google Places + Groq AI info for a location (hours, rating, summary, tip)
   /api/place-name - Server route: Groq translates a place name to standard English
@@ -235,7 +254,7 @@ Shows "Day X selected — click the map to add a location" when a day is open
 13. Multi-modal per-segment routing — walk/cycle/drive/transit per leg, smart defaults, transit with walk-to-stop legs
 14. Day difficulty badge — easy/moderate/hard pill in day header
 15. Reorder locations via drag (toggle in ⋮ menu)
-16. Full CSS variable system — all colors in `styles/setup/variables.css`; **zero hardcoded hex outside that file**; `--color-focused` (amber) and `--color-success` (green) used for focused/visited states
+16. Full CSS variable system — all colors in `styles/setup/variables.css`; **zero hardcoded hex outside that file**; `--color-focused` (amber) and `--color-success` (green) used for focused/visited states; `--color-day-0` … `--color-day-9` for map overview day palette
 17. DM Sans font via `next/font/google`, loaded as `--font-sans` CSS variable
 18. Lucide icons throughout — no emoji
 19. Trip date range — `CalendarDays` button opens `react-day-picker` range picker; each day shows its derived date
@@ -247,6 +266,8 @@ Shows "Day X selected — click the map to add a location" when a day is open
 25. English name badge — for ALL locations (not only non-ASCII), calls `/api/place-name` via Groq to show the standard English name inline in bold gray; suppresses if returned name matches original
 26. Duration hint — pill badge in nav-row before ⓘ button showing AI estimated visit time; sourced from `placeInfoCache`, persists after panel closes
 27. Visited toggle — `CircleCheck` button per location; persisted to DB via `toggleLocationVisited`; number badge + map marker turn green (`--color-success`) when visited
+28. Map overview mode — when a trip is open but no day is selected, MapView shows ALL days' locations simultaneously; each day gets a color from `DAY_COLORS` (10-color palette in variables.css as `--color-day-0` … `--color-day-9`); straight-line dashed routes connect locations within each day; entering a trip auto-fits bounds to all locations; deselecting a day returns to overview
+29. Reorder days — "Reorder days" button in the days header (visible when ≥2 days); toggles `dayReorderMode`; wraps day list in `DndContext`/`SortableContext`; each day rendered via `SortableDayItem` (render-prop component, same dnd-kit pattern as locations); day numbers display as visual position (`dayIdx + 1`) for correct optimistic UI; `reorderDays` server action updates `Day.dayNumber` in DB transaction
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)
