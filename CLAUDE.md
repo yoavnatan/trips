@@ -61,6 +61,7 @@ model Trip {
   shareToken  String    @unique @default(cuid())
   startDate   DateTime?
   endDate     DateTime?
+  tripStyle   String[]  @default([])
   days        Day[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -88,6 +89,7 @@ model LocationPoint {
 ```
 
 **Live DB columns on Trip (verified):** id, userId, title, destination, createdAt, updatedAt, shareToken, startDate, endDate
+⚠️ `tripStyle` column requires manual SQL migration: `ALTER TABLE "Trip" ADD COLUMN IF NOT EXISTS "tripStyle" TEXT[] DEFAULT '{}';`
 
 **Live DB columns on Day:** id, tripId, dayNumber, date, summary
 ⚠️ `date` column requires manual SQL migration: `ALTER TABLE "Day" ADD COLUMN IF NOT EXISTS "date" TIMESTAMP(3);`
@@ -144,6 +146,7 @@ Controlled input with 300ms debounced Mapbox forward geocode autocomplete (`type
 - `SortableLocationItem` auto-scrolls into view (`scrollIntoView({ block: 'nearest' })`) when `isFocused` becomes true
 - Entering a trip: fits bounds to all locations if any exist, else flies to destination city
 - Deselecting a day: also fits bounds to all locations
+- **`mapLoaded` state** — separate from `mounted`; set via `onLoad` callback on `<Map>`; all map-operation effects (`fitBounds`, `flyTo`) guard on `!mapLoaded` instead of `!mounted`. This fixes URL-restore: atoms are set before Mapbox initializes, so effects must wait for the map to be truly ready, not just React-mounted.
 
 ### HomeLayout (components/HomeLayout.tsx)
 - Resizable sidebar (desktop, horizontal) and map area (mobile, vertical) via pointer drag on `.home-layout__resize-handle`
@@ -227,12 +230,16 @@ Shows "Day X selected — click the map to add a location" when a day is open
 - When visited: number badge → `.location-list__num--visited` (`--color-success` green); map marker → `.map-marker--visited` (same green)
 - focused class always takes priority over visited in the class expression
 
-### English name badge (TripDetail.tsx)
-- Rendered for ALL locations (not gated on non-ASCII) — `EnglishNameBadge` calls `/api/place-name?name=&city=` → Groq returns the standard English name (max 20 tokens, temperature 0)
-- Badge renders only if the returned English name differs from the original (case-insensitive); suppresses itself for already-English names
-- Module-level `englishNameCache` prevents duplicate fetches
-- Layout: `location-list__name-row` (flex, align baseline, gap) wraps the name button + badge inline
-- CSS: `.location-list__name-row`, `.location-list__english-name` (0.75rem, bold, gray-500)
+### English name badge + type/style tags (TripDetail.tsx)
+- `EnglishNameBadge` calls `/api/place-name?name=&city=` → Groq returns `{ name, type }` JSON (max 40 tokens, JSON mode)
+- Badge renders only if returned English name differs from original; fires `onTypeLoaded(type)` callback with place type
+- Module-level `englishNameCache: Map<string, { name, type }>` prevents duplicate fetches
+- `SortableLocationItem` initializes `locationType` state from cache on mount; also receives `tripStyles` prop
+- Name row shows: name button → english name badge → `.location-list__type-badge` (gray border pill, e.g. "Museum") → `.location-list__style-tag` (blue) for each selected trip style that matches via `matchingTripStyles(type, tripStyles)`
+- `matchingTripStyles`: normalizes type and STYLE_CATEGORIES values (underscore→space), checks substring overlap
+- For suggestions: after Mapbox results, non-ASCII names get English name fetched in parallel; suggestion cards show type pill + matching style tags
+- `SuggestedLocation` type has: `category` (search category), `poiCategories` (from Mapbox `properties.categories`), `englishName?`
+- CSS: `.location-list__name-row`, `.location-list__english-name`, `.location-list__type-badge`, `.location-list__style-tag`; suggestions: `.suggest-list__name`, `.suggest-list__english`, `.suggest-list__meta`, `.suggest-list__type`, `.suggest-list__style-tag`
 
 ### Day header distance sync (TripDetail.tsx)
 - Day header shows `formatDistance(haversineSum)` as a fallback
@@ -243,6 +250,12 @@ Shows "Day X selected — click the map to add a location" when a day is open
 - `computeDayDifficulty(locs, segmentModes)` — walking/cycling = "active" km, driving/transit = ignored
 - Thresholds: hard = activeKm > 8 OR totalKm > 50; moderate = activeKm > 3 OR totalKm > 15; easy = rest
 - CSS: `.day-list__difficulty--easy/moderate/hard`
+
+### Day color dot (TripDetail.tsx)
+- Each day header shows an 8px circle (`day-list__color-dot`) inline after "Day N", colored via `--day-color` CSS variable
+- Color comes from `--color-day-N` where N = `dayIdx % 10`, matching the map overview palette
+- Class `day-list__item--color-N` (N = 0–9) on the `<li>` sets `--day-color`; the dot reads it via `background-color: var(--day-color)`
+- CSS: `.day-list__color-dot`, `.day-list__item--color-0` … `.day-list__item--color-9`
 
 ### Day progress circle (TripDetail.tsx)
 - `DayProgressCircle({ visited, total })` — 20×20 SVG donut in the `day-list__meta` area of every day header (visible collapsed and expanded)
@@ -257,6 +270,18 @@ Shows "Day X selected — click the map to add a location" when a day is open
 - Saving calls `updateDaySummary(dayId, summary)` server action with optimistic update to `dayItems`
 - CSS: `.day-list__summary-row`, `.day-list__summary-edit-btn`, `.day-summary-editor`, `.day-summary-editor__textarea`, `.day-summary-editor__actions`, `.day-summary-editor__cancel`, `.day-summary-editor__save`
 
+### Trip style selector (TripDetail.tsx)
+- `Tag` icon button in `trip-detail__header-actions`, between date and share buttons; styled identically to `.trip-detail__date-btn`
+- `tripStyles: string[]` state, initialized from `trip.tripStyle ?? []`; toggled via `handleToggleStyle` → calls `updateTripStyle` server action
+- Dropdown (`trip-detail__style-dropdown`) is a vertical list that **only closes via the trigger button** (no outside-click handler) — deliberate UX
+- Button label: "Trip style" (none selected) | single name (one selected) | `"Name +N"` (multiple)
+- `TRIP_STYLES` constant (8 options); `STYLE_CATEGORIES` maps each style to 5 Mapbox Search categories
+- `fetchNearbySuggestions` uses `STYLE_CATEGORIES` union when styles are selected, falls back to `DEFAULT_CATEGORIES`
+- `geocodeDestination(destination)` — Mapbox geocoding v5 used when a day has 0 locations (no anchor point)
+- "Suggest first location" shown on empty days; "Suggest next location" when day has locations
+- All visited location names across every day are excluded from suggestions (`allVisited`)
+- CSS: `.trip-detail__style-wrap`, `.trip-detail__style-dropdown`, `.trip-detail__style-option`, `.trip-detail__style-option--active`, `.trip-detail__date-btn--set`
+
 ### Mark all done / Unmark all (TripDetail.tsx)
 - In the ⋮ menu: "Mark all done" when not all locations are visited; "Unmark all" when all are visited
 - `handleMarkAllVisited(dayId, visited)` — optimistic update to `dayItems` locations, calls `markAllLocationsVisited(dayId, visited)` server action
@@ -267,12 +292,12 @@ Shows "Day X selected — click the map to add a location" when a day is open
 /app
   /actions        - addDay, addLocationPoint, createTrip, deleteDay,
                     deleteLocation, clearDayLocations, reorderLocations, reorderDays,
-                    updateLocation, updateTrip, updateDayDate, swapDayDates,
+                    updateLocation, updateTrip, updateTripStyle, updateDayDate, swapDayDates,
                     toggleLocationVisited, markAllLocationsVisited, updateDaySummary,
                     registerUser, signOutAction
   /api/auth       - NextAuth route
   /api/place-info - Server route: Google Places + Groq AI info for a location (hours, rating, summary, tip)
-  /api/place-name - Server route: Groq translates a place name to standard English
+  /api/place-name - Server route: Groq returns `{ name, type }` JSON — standard English name + place type (Museum, Restaurant, etc.)
   /share/[token]  - Public read-only shared trip page
   layout.tsx, page.tsx
 /components
@@ -315,18 +340,20 @@ Shows "Day X selected — click the map to add a location" when a day is open
 22. Location selection highlight — clicking a location name or number badge sets `focusedLocationIdAtom`; number badge turns amber, map marker turns amber + scales up
 23. Place info panel — circular `ⓘ` button next to route pill; `/api/place-info` returns Google Places data (hours/rating/price) + Groq AI summary (type/duration/tip)
 24. Day header distance sync — header distance badge updates to real routing total when day is open (via `dayRouteTotalAtom`)
-25. English name badge — for ALL locations (not only non-ASCII), calls `/api/place-name` via Groq to show the standard English name inline in bold gray; suppresses if returned name matches original
+25. English name badge + type badge — `/api/place-name` returns `{ name, type }` in one Groq call (JSON mode); `EnglishNameBadge` fires `onTypeLoaded` callback with the type; `SortableLocationItem` shows a subtle gray-bordered type pill (e.g. "Museum") and blue style tags for any selected `tripStyles` that match via `matchingTripStyles()`; `englishNameCache` stores `{ name, type }` keyed by `name|city`; `SortableLocationList` receives `tripStyles` prop passed down from `TripDetail`
 26. Duration hint — pill badge in nav-row before ⓘ button showing AI estimated visit time; sourced from `placeInfoCache`, persists after panel closes
 27. Visited toggle — `CircleCheck` button per location; persisted to DB via `toggleLocationVisited`; number badge + map marker turn green (`--color-success`) when visited
 28. Map overview mode — when a trip is open but no day is selected, MapView shows ALL days' locations simultaneously; each day gets a color from `DAY_COLORS` (10-color palette in variables.css as `--color-day-0` … `--color-day-9`); straight-line dashed routes connect locations within each day; entering a trip auto-fits bounds to all locations; deselecting a day returns to overview
 29. Per-day dates — optional `date` per day; list always sorted chronologically (`sortDaysByDate`); `CalendarDays` button per day opens inline single-date picker; already-used + out-of-range dates disabled; `updateDayDate` server action persists
 30. Switch days — two-step selection of two day number badges → "Confirm swap" button appears in header; `swapDayDates` server action swaps their dates (or dayNumbers if both undated); toast confirms success
-31. Trip stats summary — `trip-detail__trip-stats` shown in the trip header below destination; displays `N days · M locations`; hidden when no days exist
+31. Trip stats summary — `trip-detail__trip-stats` (flex row) shown in the trip header below destination; displays `N days · M locations · Style1 · Style2`; selected trip styles appear as plain gray text with `·` separator inline; visible if days > 0 OR any style selected
 32. Day progress circle — SVG donut in every day header showing visited/total ratio; blue → green when fully done; `DayProgressCircle` component; visible in both collapsed and expanded states
 33. Day description — inline editor for `Day.summary`; "Add/Edit description" button at top of expanded day body; `updateDaySummary` server action; optimistic update
 34. Mark all done — ⋮ menu item bulk-marks all day locations visited (or unvisited); `markAllLocationsVisited` server action; optimistic update propagates to `SortableLocationItem` via `useEffect` on `loc.visited`
 35. Sidebar/map size persistence — `HomeLayout` saves sidebar width and map height to `localStorage` on drag end; restored on next visit (per browser, not per user)
 36. Map marker selection — clicking any marker (overview or single-day mode) selects the location: sets `focusedLocationIdAtom` (amber highlight on badge + marker) and scrolls the list to that item; in overview mode also opens the day via `selectedDayIdAtom`
+37. Day color dot — small 8px circle after "Day N" in each day header, colored to match that day's map color (`--color-day-N`); `day-list__item--color-N` class drives `--day-color` variable; border-left stays primary blue for the active state
+38. Trip style selector — multi-select dropdown in the trip header actions row (between dates and share); options: First Time, Classic, Alternative, Adventure, Relaxed, Cultural, Culinary, Family, **Historic** (9 total); saved to `Trip.tripStyle String[]` via `updateTripStyle` action; button always shows "Trip style" (selected styles displayed in stats row instead); affects suggestion categories (`STYLE_CATEGORIES` map in TripDetail.tsx); `Historic` categories: `historic_site, monument, castle, archaeological_site, landmark`; "Suggest first location" available even on empty days (geocodes trip destination); dropdown stays open until manually toggled closed
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)

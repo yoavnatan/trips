@@ -4,7 +4,7 @@ export async function GET(req: NextRequest) {
   const name = req.nextUrl.searchParams.get('name') ?? ''
   const city = req.nextUrl.searchParams.get('city') ?? ''
   const key = process.env.GROQ_API_KEY
-  if (!key || !name) return NextResponse.json({ name: null })
+  if (!key || !name) return NextResponse.json({ name: null, type: null })
 
   const context = city ? ` in ${city}` : ''
 
@@ -16,19 +16,28 @@ export async function GET(req: NextRequest) {
     },
     body: JSON.stringify({
       model: 'llama-3.1-8b-instant',
-      max_tokens: 20,
+      max_tokens: 40,
       temperature: 0,
+      response_format: { type: 'json_object' },
       messages: [
         {
           role: 'user',
-          content: `What is the standard English name for the place "${name}"${context}? Reply with just the English name, nothing else — no explanation, no punctuation.`,
+          content: `For the place "${name}"${context}, reply with JSON: {"name": "<standard English name>", "type": "<one word category like Museum, Restaurant, Park, Gallery, Market, etc.>"}`,
         },
       ],
     }),
   })
 
-  if (!res.ok) return NextResponse.json({ name: null })
+  if (!res.ok) return NextResponse.json({ name: null, type: null })
   const data = await res.json()
-  const englishName: string | null = data.choices?.[0]?.message?.content?.trim() ?? null
-  return NextResponse.json({ name: englishName })
+  const raw: string = data.choices?.[0]?.message?.content?.trim() ?? '{}'
+  try {
+    const parsed = JSON.parse(raw) as { name?: string; type?: string }
+    return NextResponse.json({
+      name: parsed.name?.trim() ?? null,
+      type: parsed.type?.trim() ?? null,
+    })
+  } catch {
+    return NextResponse.json({ name: null, type: null })
+  }
 }

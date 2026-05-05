@@ -24,7 +24,7 @@ import {
   Plane, Clock, CircleCheck, Pencil,
   ChevronDown, ChevronUp, ArrowUpDown, Check, X,
   GripVertical, ArrowLeft, CalendarDays, Share2, MapPin, Navigation,
-  MoreVertical, Trash2, Info, ArrowLeftRight,
+  MoreVertical, Trash2, Info, ArrowLeftRight, Tag,
 } from 'lucide-react'
 import { DayPicker } from 'react-day-picker'
 import type { DateRange } from 'react-day-picker'
@@ -43,6 +43,7 @@ import { updateDayDate } from '@/app/actions/updateDayDate'
 import { swapDayDates } from '@/app/actions/swapDayDates'
 import { updateDaySummary } from '@/app/actions/updateDaySummary'
 import { markAllLocationsVisited } from '@/app/actions/markAllLocationsVisited'
+import { updateTripStyle } from '@/app/actions/updateTripStyle'
 import { haversineDistance, formatDistance } from '@/lib/utils'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import type { TripWithDaysAndLocations, DayWithLocations, ActionState, SuggestedLocation, LocationPoint, TransportMode, RouteGeoJSON } from '@/types'
@@ -54,6 +55,32 @@ interface ConfirmState {
 }
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
+
+const TRIP_STYLES = [
+  'First Time',
+  'Classic',
+  'Alternative',
+  'Adventure',
+  'Relaxed',
+  'Cultural',
+  'Culinary',
+  'Family',
+  'Historic',
+] as const
+
+const STYLE_CATEGORIES: Record<string, string[]> = {
+  'First Time': ['tourist_attraction', 'viewpoint', 'museum', 'historic_site', 'landmark'],
+  'Classic': ['museum', 'historic_site', 'art_gallery', 'viewpoint', 'tourist_attraction'],
+  'Alternative': ['art_gallery', 'music_venue', 'cafe', 'bar', 'theater'],
+  'Adventure': ['park', 'hiking_trail', 'nature_reserve', 'viewpoint', 'climbing_gym'],
+  'Relaxed': ['park', 'cafe', 'spa', 'garden', 'viewpoint'],
+  'Cultural': ['museum', 'art_gallery', 'historic_site', 'cultural_center', 'theater'],
+  'Culinary': ['restaurant', 'food_market', 'cafe', 'bakery', 'bar'],
+  'Family': ['zoo', 'amusement_park', 'park', 'museum', 'playground'],
+  'Historic': ['historic_site', 'monument', 'castle', 'archaeological_site', 'landmark'],
+}
+
+const DEFAULT_CATEGORIES = ['tourist_attraction', 'historic_site', 'art_gallery', 'viewpoint', 'museum']
 
 const MODE_LABELS: Record<TransportMode, string> = {
   driving: 'Drive',
@@ -134,8 +161,35 @@ interface TripDetailProps {
 
 const initialState: ActionState = {}
 
-async function fetchNearbySuggestions(lat: number, lng: number, exclude: string[]): Promise<SuggestedLocation[]> {
-  const categories = ['tourist_attraction', 'historic_site', 'art_gallery', 'viewpoint', 'museum']
+async function geocodeDestination(destination: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(destination)}.json` +
+        `?limit=1&types=place,locality,region,country&access_token=${TOKEN}`
+    )
+    if (!res.ok) return null
+    const data = await res.json() as { features?: Array<{ center: [number, number] }> }
+    const feature = data.features?.[0]
+    if (!feature) return null
+    return { lng: feature.center[0], lat: feature.center[1] }
+  } catch {
+    return null
+  }
+}
+
+function formatCategory(cat: string): string {
+  return cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function hasNonAscii(str: string): boolean {
+  return /[^\x00-\x7F]/.test(str)
+}
+
+async function fetchNearbySuggestions(lat: number, lng: number, exclude: string[], tripStyles: string[] = []): Promise<SuggestedLocation[]> {
+  const styleCategories = tripStyles.flatMap((s) => STYLE_CATEGORIES[s] ?? [])
+  const categories = styleCategories.length > 0
+    ? [...new Set(styleCategories)].slice(0, 5)
+    : DEFAULT_CATEGORIES
 
   const results = await Promise.all(
     categories.map(async (category): Promise<SuggestedLocation | null> => {
@@ -146,13 +200,18 @@ async function fetchNearbySuggestions(lat: number, lng: number, exclude: string[
         )
         if (!res.ok) return null
         const data = await res.json()
-        const features = (data.features ?? []) as Array<{ properties: { name: string }; geometry: { coordinates: [number, number] } }>
+        const features = (data.features ?? []) as Array<{
+          properties: { name: string; categories?: string[]; poi_category?: string[] }
+          geometry: { coordinates: [number, number] }
+        }>
         const pick = features.find(f => !exclude.includes(f.properties.name))
         if (!pick) return null
         return {
           name: pick.properties.name,
           lng: pick.geometry.coordinates[0],
           lat: pick.geometry.coordinates[1],
+          category,
+          poiCategories: pick.properties.categories ?? pick.properties.poi_category ?? [],
         }
       } catch {
         return null
@@ -190,6 +249,8 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   const [toast, setToast] = useState<string | null>(null)
   const [editingSummaryDayId, setEditingSummaryDayId] = useState<string | null>(null)
   const [summaryDraft, setSummaryDraft] = useState('')
+  const [tripStyles, setTripStyles] = useState<string[]>(trip.tripStyle ?? [])
+  const [styleDropdownOpen, setStyleDropdownOpen] = useState(false)
 
   useEffect(() => {
     if (!menuOpenDayId) return
@@ -204,6 +265,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
     document.addEventListener('click', handleOutsideClick)
     return () => document.removeEventListener('click', handleOutsideClick)
   }, [dayDatePickerId])
+
 
   useEffect(() => {
     const sorted = sortDaysByDate([...trip.days])
@@ -330,24 +392,66 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
     if (range?.from && range?.to) setShowDatePicker(false)
   }
 
-  async function handleSuggest(dayId: string, lat: number, lng: number): Promise<void> {
+  async function handleSuggest(dayId: string, lat: number | null, lng: number | null): Promise<void> {
     setSuggestingForDayId(dayId)
     setSuggestLoading(true)
     setSuggestions([])
-    const exclude = seenNames[dayId] ?? []
-    const results = await fetchNearbySuggestions(lat, lng, exclude)
+
+    let resolvedLat = lat
+    let resolvedLng = lng
+    if (resolvedLat === null || resolvedLng === null) {
+      const coords = await geocodeDestination(trip.destination)
+      if (!coords) { setSuggestLoading(false); return }
+      resolvedLat = coords.lat
+      resolvedLng = coords.lng
+    }
+
+    const allVisited = dayItems.flatMap((d) => d.locations.map((l) => l.name))
+    const exclude = [...new Set([...(seenNames[dayId] ?? []), ...allVisited])]
+    const results = await fetchNearbySuggestions(resolvedLat, resolvedLng, exclude, tripStyles)
     setSeenNames((prev) => ({
       ...prev,
       [dayId]: [...(prev[dayId] ?? []), ...results.map((r) => r.name)],
     }))
     setSuggestions(results)
     setSuggestLoading(false)
+
+    // Fetch English names for non-ASCII names in parallel (non-blocking)
+    const nonAscii = results.filter((r) => hasNonAscii(r.name))
+    if (nonAscii.length > 0) {
+      Promise.all(
+        nonAscii.map(async (r) => {
+          try {
+            const res = await fetch(`/api/place-name?name=${encodeURIComponent(r.name)}&city=${encodeURIComponent(trip.destination)}`)
+            const data = await res.json() as { name: string | null; type: string | null }
+            const en = data.name?.trim() ?? null
+            if (en && en.toLowerCase() !== r.name.toLowerCase()) {
+              return { name: r.name, englishName: en }
+            }
+          } catch { /* ignore */ }
+          return null
+        })
+      ).then((updates) => {
+        const map = new Map(updates.filter((u): u is { name: string; englishName: string } => u !== null).map((u) => [u.name, u.englishName]))
+        if (map.size > 0) {
+          setSuggestions((prev) => prev.map((s) => map.has(s.name) ? { ...s, englishName: map.get(s.name) } : s))
+        }
+      })
+    }
   }
 
   function handleSuggestionClick(loc: SuggestedLocation): void {
     setSuggestedLocation(loc)
     setSuggestions([])
     setSuggestingForDayId(null)
+  }
+
+  function handleToggleStyle(style: string): void {
+    const next = tripStyles.includes(style)
+      ? tripStyles.filter((s) => s !== style)
+      : [...tripStyles, style]
+    setTripStyles(next)
+    void updateTripStyle(trip.id, next)
   }
 
   function handleDeleteLocation(locationId: string, locationName: string): void {
@@ -416,6 +520,31 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
               <CalendarDays size={14} />
               <span>{formattedDateRange ?? 'Add dates'}</span>
             </button>
+            <div className="trip-detail__style-wrap" onClick={(e) => e.stopPropagation()}>
+              <button
+                className={`trip-detail__date-btn${styleDropdownOpen ? ' trip-detail__date-btn--open' : ''}${tripStyles.length > 0 ? ' trip-detail__date-btn--set' : ''}`}
+                onClick={() => setStyleDropdownOpen((o) => !o)}
+                title="Set trip style"
+              >
+                <Tag size={13} />
+                <span>Trip style</span>
+                <ChevronDown size={11} />
+              </button>
+              {styleDropdownOpen && (
+                <div className="trip-detail__style-dropdown">
+                  {TRIP_STYLES.map((style) => (
+                    <button
+                      key={style}
+                      className={`trip-detail__style-option${tripStyles.includes(style) ? ' trip-detail__style-option--active' : ''}`}
+                      onClick={() => handleToggleStyle(style)}
+                    >
+                      {tripStyles.includes(style) && <Check size={11} />}
+                      {style}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
               className={`trip-detail__share-btn${copied ? ' trip-detail__share-btn--copied' : ''}`}
               onClick={() => void handleShare()}
@@ -429,10 +558,15 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
           </div>
         </div>
         <p className="trip-detail__destination">{trip.destination}</p>
-        {dayItems.length > 0 && (
-          <p className="trip-detail__trip-stats">
-            {dayItems.length} {dayItems.length === 1 ? 'day' : 'days'} · {dayItems.reduce((sum, d) => sum + d.locations.length, 0)} locations
-          </p>
+        {(dayItems.length > 0 || tripStyles.length > 0) && (
+          <div className="trip-detail__trip-stats">
+            {dayItems.length > 0 && (
+              <span>{dayItems.length} {dayItems.length === 1 ? 'day' : 'days'} · {dayItems.reduce((sum, d) => sum + d.locations.length, 0)} locations</span>
+            )}
+            {tripStyles.map((style) => (
+              <span key={style} className="trip-detail__style-chip">· {style}</span>
+            ))}
+          </div>
         )}
 
         {showDatePicker && (
@@ -492,7 +626,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                 : null
 
               return (
-                <li key={day.id} className={`day-list__item${isOpen ? ' day-list__item--active' : ''}`}>
+                <li key={day.id} className={`day-list__item day-list__item--color-${dayIdx % 10}${isOpen ? ' day-list__item--active' : ''}`}>
                   <div className="day-list__header-row">
                     {switchDaysMode && (
                       <button
@@ -507,7 +641,10 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                         {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       </span>
                       <span className="day-list__number-col">
-                        <span className="day-list__number">Day {displayNumber}</span>
+                        <span className="day-list__number">
+                          Day {displayNumber}
+                          <span className="day-list__color-dot" />
+                        </span>
                         {displayDate && <span className={`day-list__date${customDate ? ' day-list__date--custom' : ''}`}>{displayDate}</span>}
                       </span>
                       <span className="day-list__meta">
@@ -659,6 +796,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                           city={trip.destination}
                           deletingLocationId={deletingLocationId}
                           reorderMode={reorderMode}
+                          tripStyles={tripStyles}
                           onFocus={(loc) => setFocusedLocation({ lat: loc.lat, lng: loc.lng })}
                           onDelete={(loc) => handleDeleteLocation(loc.id, loc.name)}
                         />
@@ -666,33 +804,47 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
 
                       {locs.length >= 2 && <DayRoute locs={locs} />}
 
-                      {lastLoc && (
-                        <div className="day-list__suggest">
-                          <button
-                            className="day-list__suggest-btn"
-                            onClick={() => handleSuggest(day.id, lastLoc.lat, lastLoc.lng)}
-                            disabled={suggestLoading && suggestingForDayId === day.id}
-                          >
-                            {suggestLoading && suggestingForDayId === day.id ? 'Loading…' : '+ Suggest next location'}
-                          </button>
-                          {suggestingForDayId === day.id && suggestions.length > 0 && (
-                            <ul className="suggest-list">
-                              {suggestions.map((s) => (
+                      <div className="day-list__suggest">
+                        <button
+                          className="day-list__suggest-btn"
+                          onClick={() => handleSuggest(day.id, lastLoc?.lat ?? null, lastLoc?.lng ?? null)}
+                          disabled={suggestLoading && suggestingForDayId === day.id}
+                        >
+                          {suggestLoading && suggestingForDayId === day.id ? 'Loading…' : locs.length === 0 ? '+ Suggest first location' : '+ Suggest next location'}
+                        </button>
+                        {suggestingForDayId === day.id && suggestions.length > 0 && (
+                          <ul className="suggest-list">
+                            {suggestions.map((s) => {
+                              const matchingStyles = tripStyles.filter((style) =>
+                                (STYLE_CATEGORIES[style] ?? []).includes(s.category)
+                              )
+                              return (
                                 <li key={`${s.lat}-${s.lng}`} className="suggest-list__item">
                                   <button
                                     className="suggest-list__btn"
                                     onClick={() => handleSuggestionClick(s)}
                                   >
-                                    {s.name}
+                                    <span className="suggest-list__name">
+                                      {s.name}
+                                      {s.englishName && (
+                                        <span className="suggest-list__english">{s.englishName}</span>
+                                      )}
+                                    </span>
+                                    <span className="suggest-list__meta">
+                                      <span className="suggest-list__type">{formatCategory(s.category)}</span>
+                                      {matchingStyles.map((style) => (
+                                        <span key={style} className="suggest-list__style-tag">{style}</span>
+                                      ))}
+                                    </span>
                                   </button>
                                 </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                      )}
+                              )
+                            })}
+                          </ul>
+                        )}
+                      </div>
 
-                      <p className="day-list__hint">Click the map to add another location</p>
+                      {locs.length > 0 && <p className="day-list__hint">Click the map to add another location</p>}
                     </div>
                   )}
                 </li>
@@ -1167,11 +1319,12 @@ interface SortableLocationListProps {
   city: string
   deletingLocationId: string | null
   reorderMode: boolean
+  tripStyles: string[]
   onFocus: (loc: LocationPoint) => void
   onDelete: (loc: LocationPoint) => void
 }
 
-function SortableLocationList({ locs, city, deletingLocationId, reorderMode, onFocus, onDelete }: SortableLocationListProps) {
+function SortableLocationList({ locs, city, deletingLocationId, reorderMode, tripStyles, onFocus, onDelete }: SortableLocationListProps) {
   const router = useRouter()
   const [items, setItems] = useState<LocationPoint[]>(locs)
   const [reorderError, setReorderError] = useState<string | null>(null)
@@ -1225,6 +1378,7 @@ function SortableLocationList({ locs, city, deletingLocationId, reorderMode, onF
                 distFromPrev={i > 0 ? segDists[i - 1] : null}
                 isDeleting={deletingLocationId === loc.id}
                 reorderMode={reorderMode}
+                tripStyles={tripStyles}
                 onFocus={() => onFocus(loc)}
                 onDelete={() => onDelete(loc)}
               />
@@ -1264,11 +1418,23 @@ interface SortableLocationItemProps {
   distFromPrev: number | null
   isDeleting: boolean
   reorderMode: boolean
+  tripStyles: string[]
   onFocus: () => void
   onDelete: () => void
 }
 
-function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDeleting, reorderMode, onFocus, onDelete }: SortableLocationItemProps) {
+function matchingTripStyles(type: string | null, styles: string[]): string[] {
+  if (!type || styles.length === 0) return []
+  const normalized = type.toLowerCase().replace(/[_\s]+/g, ' ').trim()
+  return styles.filter((style) =>
+    (STYLE_CATEGORIES[style] ?? []).some((cat) => {
+      const catNorm = cat.replace(/_/g, ' ')
+      return catNorm === normalized || catNorm.includes(normalized) || normalized.includes(catNorm)
+    })
+  )
+}
+
+function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDeleting, reorderMode, tripStyles, onFocus, onDelete }: SortableLocationItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: loc.id })
   const router = useRouter()
   const [notesOpen, setNotesOpen] = useState(false)
@@ -1278,7 +1444,9 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
   const [visited, setVisited] = useState(loc.visited)
   useEffect(() => { setVisited(loc.visited) }, [loc.visited])
   const infoCacheKey = `${loc.name}|${city}|${loc.lat}|${loc.lng}`
+  const nameCacheKey = `${loc.name}|${city}`
   const [durationHint, setDurationHint] = useState<string | null>(() => placeInfoCache.get(infoCacheKey)?.ai?.duration ?? null)
+  const [locationType, setLocationType] = useState<string | null>(() => englishNameCache.get(nameCacheKey)?.type ?? null)
   const segmentModeValues = useAtomValue(segmentModesAtom)
   const segmentSummaries = useAtomValue(segmentSummaryAtom)
   const [focusedLocationId, setFocusedLocationId] = useAtom(focusedLocationIdAtom)
@@ -1329,7 +1497,11 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
             <button className="location-list__name" onClick={() => { setFocusedLocationId(loc.id); onFocus() }}>
               {loc.name}
             </button>
-            <EnglishNameBadge name={loc.name} city={city} />
+            <EnglishNameBadge name={loc.name} city={city} onTypeLoaded={setLocationType} />
+            {locationType && <span className="location-list__type-badge">{locationType}</span>}
+            {matchingTripStyles(locationType, tripStyles).map((style) => (
+              <span key={style} className="location-list__style-tag">{style}</span>
+            ))}
           </div>
           {!notesOpen && (
             <button
@@ -1435,26 +1607,29 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
 }
 
 
-const englishNameCache = new Map<string, string | null>()
+interface PlaceNameData { name: string | null; type: string | null }
+const englishNameCache = new Map<string, PlaceNameData>()
 
-function EnglishNameBadge({ name, city }: { name: string; city: string }) {
+function EnglishNameBadge({ name, city, onTypeLoaded }: { name: string; city: string; onTypeLoaded?: (type: string | null) => void }) {
   const cacheKey = `${name}|${city}`
   const cached = englishNameCache.get(cacheKey)
-  const [englishName, setEnglishName] = useState<string | null>(
-    typeof cached === 'string' ? cached : null
-  )
+  const [englishName, setEnglishName] = useState<string | null>(cached?.name ?? null)
 
   useEffect(() => {
-    if (cached !== undefined) return
+    if (cached !== undefined) {
+      onTypeLoaded?.(cached.type)
+      return
+    }
     const params = new URLSearchParams({ name, city })
     fetch(`/api/place-name?${params}`)
       .then((r) => r.json())
-      .then((data: { name: string | null }) => {
-        englishNameCache.set(cacheKey, data.name)
+      .then((data: PlaceNameData) => {
+        englishNameCache.set(cacheKey, data)
         setEnglishName(data.name)
+        onTypeLoaded?.(data.type)
       })
-      .catch(() => englishNameCache.set(cacheKey, null))
-  }, [cacheKey, cached, name, city])
+      .catch(() => englishNameCache.set(cacheKey, { name: null, type: null }))
+  }, [cacheKey, cached, name, city, onTypeLoaded])
 
   if (!englishName || englishName.toLowerCase() === name.toLowerCase()) return null
   return <span className="location-list__english-name">{englishName}</span>

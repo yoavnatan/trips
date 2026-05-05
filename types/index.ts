@@ -6,6 +6,7 @@ export interface Trip {
   shareToken: string
   startDate: Date | null
   endDate: Date | null
+  tripStyle: string[]
   createdAt: Date
   updatedAt: Date
 }
@@ -50,6 +51,9 @@ export interface SuggestedLocation {
   lat: number
   lng: number
   name: string
+  category: string
+  poiCategories: string[]
+  englishName?: string
 }
 
 export type TransportMode = 'driving' | 'walking' | 'cycling' | 'transit' | 'ferry' | 'flight'

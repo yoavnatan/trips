@@ -25,6 +25,7 @@ model Trip {
   shareToken  String    @unique @default(cuid())
   startDate   DateTime?
   endDate     DateTime?
+  tripStyle   String[]  @default([])
   days        Day[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

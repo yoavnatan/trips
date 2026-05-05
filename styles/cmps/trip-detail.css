@@ -131,9 +131,69 @@
 }
 
 .trip-detail__trip-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
   font-size: 0.75rem;
   color: var(--color-gray-400);
   margin-top: 0.2rem;
+}
+
+.trip-detail__style-chip {
+  color: var(--color-gray-400);
+}
+
+.trip-detail__date-btn--set {
+  border-color: var(--color-primary-border);
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.trip-detail__style-wrap {
+  position: relative;
+}
+
+.trip-detail__style-dropdown {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 50;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+}
+
+.trip-detail__style-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.45rem 0.6rem;
+  border-radius: 7px;
+  border: none;
+  background: none;
+  color: var(--color-gray-700);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  font-family: inherit;
+  text-align: left;
+}
+
+.trip-detail__style-option:hover {
+  background: var(--color-gray-100);
+  color: var(--color-gray-900);
+}
+
+.trip-detail__style-option--active {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
 }
 
 .trip-detail__days-header {
@@ -221,6 +281,25 @@
 .day-list__item--active {
   border-left-color: var(--color-primary);
 }
+
+.day-list__color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: var(--day-color, var(--color-primary));
+}
+
+.day-list__item--color-0 { --day-color: var(--color-day-0); }
+.day-list__item--color-1 { --day-color: var(--color-day-1); }
+.day-list__item--color-2 { --day-color: var(--color-day-2); }
+.day-list__item--color-3 { --day-color: var(--color-day-3); }
+.day-list__item--color-4 { --day-color: var(--color-day-4); }
+.day-list__item--color-5 { --day-color: var(--color-day-5); }
+.day-list__item--color-6 { --day-color: var(--color-day-6); }
+.day-list__item--color-7 { --day-color: var(--color-day-7); }
+.day-list__item--color-8 { --day-color: var(--color-day-8); }
+.day-list__item--color-9 { --day-color: var(--color-day-9); }
 
 @media (min-width: 768px) {
   .day-list {
@@ -453,6 +532,9 @@
 .day-list__number {
   font-size: 1rem;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .day-list__date {
@@ -1030,6 +1112,29 @@
   white-space: nowrap;
 }
 
+.location-list__type-badge {
+  font-size: 0.625rem;
+  color: var(--color-gray-400);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.3125rem;
+  white-space: nowrap;
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.location-list__style-tag {
+  font-size: 0.625rem;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.3125rem;
+  white-space: nowrap;
+  line-height: 1.4;
+  font-weight: 500;
+}
+
 /* Place info panel */
 
 .location-info {
@@ -1261,12 +1366,15 @@
   background: var(--color-gray-50);
   border: 1px solid var(--color-gray-200);
   border-radius: 0.25rem;
-  padding: 0.3125rem 0.625rem;
+  padding: 0.375rem 0.625rem;
   font-size: 0.75rem;
   color: var(--color-gray-700);
   cursor: pointer;
   text-align: left;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
   transition: border-color 0.15s, background 0.15s;
 }
 
@@ -1274,6 +1382,61 @@
   border-color: var(--color-primary);
   background: var(--color-primary-light);
   color: var(--color-primary);
+}
+
+.suggest-list__btn:hover .suggest-list__type {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.suggest-list__name {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  font-weight: 500;
+  color: var(--color-gray-800);
+  flex-wrap: wrap;
+}
+
+.suggest-list__btn:hover .suggest-list__name {
+  color: var(--color-primary);
+}
+
+.suggest-list__english {
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--color-gray-500);
+}
+
+.suggest-list__btn:hover .suggest-list__english {
+  color: var(--color-primary);
+  opacity: 0.8;
+}
+
+.suggest-list__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.suggest-list__type {
+  font-size: 0.6875rem;
+  color: var(--color-gray-500);
+  border: 1px solid var(--color-gray-300);
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.3125rem;
+  line-height: 1.4;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.suggest-list__style-tag {
+  font-size: 0.6875rem;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.3125rem;
+  line-height: 1.4;
 }
 
 /* Day route — visual timeline */
