@@ -20,6 +20,7 @@ export interface LocationPoint {
   name: string
   notes: string | null
   visited: boolean
+  stopType: string
 }
 
 export interface Day {
@@ -54,6 +55,7 @@ export interface SuggestedLocation {
   category: string
   poiCategories: string[]
   englishName?: string
+  stopType?: string
 }
 
 export type TransportMode = 'driving' | 'walking' | 'cycling' | 'transit' | 'ferry' | 'flight'

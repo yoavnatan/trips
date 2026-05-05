@@ -72,8 +72,15 @@
   background: var(--color-primary-light);
 }
 
+.trip-detail__date-wrap {
+  position: relative;
+}
+
 .trip-detail__date-picker-wrap {
-  margin-top: 0.5rem;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
   border: 1px solid var(--color-gray-200);
   border-radius: 0.5rem;
   background: var(--color-white);
@@ -86,10 +93,33 @@
   --rdp-accent-background-color: var(--color-primary-light);
   --rdp-selected-border: var(--color-primary);
   --rdp-today-color: var(--color-primary);
+  --rdp-day-height: 32px;
+  --rdp-day-width: 32px;
+  --rdp-day_button-height: 30px;
+  --rdp-day_button-width: 30px;
+  --rdp-nav-height: 2rem;
+  --rdp-nav_button-height: 1.75rem;
+  --rdp-nav_button-width: 1.75rem;
+  --rdp-weekday-padding: 0.25rem 0;
   font-family: var(--font-sans);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   margin: 0;
-  padding: 0.75rem;
+  padding: 0.5rem 0.625rem;
+}
+
+.trip-detail__date-picker-wrap .rdp-month_caption {
+  font-size: 0.875rem;
+  height: 2rem;
+}
+
+.trip-detail__date-picker-wrap .rdp-nav {
+  height: 2rem;
+}
+
+.trip-detail__date-picker-wrap .rdp-button_previous,
+.trip-detail__date-picker-wrap .rdp-button_next {
+  height: 1.75rem;
+  width: 1.75rem;
 }
 
 .trip-detail__share-btn {
@@ -212,6 +242,93 @@
   margin-bottom: 0;
 }
 
+.trip-detail__days-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.trip-detail__days-cal-wrap {
+  position: relative;
+}
+
+.trip-detail__days-cal-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  color: var(--color-gray-400);
+  cursor: pointer;
+  padding: 0;
+}
+
+.trip-detail__days-cal-btn:hover,
+.trip-detail__days-cal-btn--open {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.trip-detail__days-cal-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  border: 1px solid var(--color-gray-200);
+  border-radius: 0.5rem;
+  background: var(--color-white);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.trip-detail__days-cal-picker .rdp-root {
+  --rdp-accent-color: var(--color-primary);
+  --rdp-accent-background-color: var(--color-primary-light);
+  --rdp-selected-border: var(--color-primary);
+  --rdp-today-color: var(--color-primary);
+  --rdp-day-height: 38px;
+  --rdp-day-width: 32px;
+  --rdp-day_button-height: 30px;
+  --rdp-day_button-width: 30px;
+  --rdp-nav-height: 2rem;
+  --rdp-nav_button-height: 1.75rem;
+  --rdp-nav_button-width: 1.75rem;
+  --rdp-weekday-padding: 0.25rem 0;
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+}
+
+.trip-detail__days-cal-picker .rdp-month_caption {
+  font-size: 0.875rem;
+  height: 2rem;
+}
+
+.trip-detail__days-cal-picker .rdp-nav {
+  height: 2rem;
+}
+
+.trip-detail__days-cal-picker .rdp-button_previous,
+.trip-detail__days-cal-picker .rdp-button_next {
+  height: 1.75rem;
+  width: 1.75rem;
+}
+
+.trip-detail__days-cal-picker .rdp-day_button {
+  flex-direction: column;
+  gap: 1px;
+}
+
+.trip-detail__cal-day-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: block;
+}
 
 .trip-detail__reorder-days-btn {
   display: flex;
@@ -280,6 +397,10 @@
 
 .day-list__item--active {
   border-left-color: var(--color-primary);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 -1px 0 var(--color-gray-200);
+  position: relative;
+  z-index: 1;
+  margin-bottom: 2px;
 }
 
 .day-list__color-dot {
@@ -407,9 +528,20 @@
   font-weight: 500;
 }
 
+.day-list__cal-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .day-list__day-picker-wrap {
-  border-top: 1px solid var(--color-gray-100);
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 100;
+  border: 1px solid var(--color-gray-200);
+  border-radius: 0.5rem;
   background: var(--color-white);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
 .day-list__day-picker-wrap .rdp-root {
@@ -417,10 +549,33 @@
   --rdp-accent-background-color: var(--color-primary-light);
   --rdp-selected-border: var(--color-primary);
   --rdp-today-color: var(--color-primary);
+  --rdp-day-height: 32px;
+  --rdp-day-width: 32px;
+  --rdp-day_button-height: 30px;
+  --rdp-day_button-width: 30px;
+  --rdp-nav-height: 2rem;
+  --rdp-nav_button-height: 1.75rem;
+  --rdp-nav_button-width: 1.75rem;
+  --rdp-weekday-padding: 0.25rem 0;
   font-family: var(--font-sans);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   margin: 0;
-  padding: 0.625rem 0.75rem;
+  padding: 0.5rem 0.625rem;
+}
+
+.day-list__day-picker-wrap .rdp-month_caption {
+  font-size: 0.875rem;
+  height: 2rem;
+}
+
+.day-list__day-picker-wrap .rdp-nav {
+  height: 2rem;
+}
+
+.day-list__day-picker-wrap .rdp-button_previous,
+.day-list__day-picker-wrap .rdp-button_next {
+  height: 1.75rem;
+  width: 1.75rem;
 }
 
 .day-list__day-picker-clear {
@@ -1019,7 +1174,7 @@
 }
 
 .location-list__from-input {
-  flex: 1;
+  flex: 0 1 180px;
   border: 1px solid var(--color-gray-200);
   border-radius: 999px;
   padding: 0.25rem 0.625rem;
@@ -1332,7 +1487,7 @@
 .day-list__suggest-btn {
   background: none;
   border: 1px dashed var(--color-gray-300);
-  border-radius: 0.375rem;
+  border-radius: 2px;
   padding: 0.375rem 0.625rem;
   font-size: 0.75rem;
   color: var(--color-gray-500);
@@ -1349,6 +1504,36 @@
 .day-list__suggest-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.day-list__suggest-row {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.day-list__suggest-row .day-list__suggest-btn {
+  flex: 1;
+}
+
+.day-list__suggest-btn--meal {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto !important;
+  color: var(--color-warning) !important;
+  border-color: var(--color-warning) !important;
+  border-style: dashed !important;
+}
+
+.day-list__suggest-btn--meal:hover:not(:disabled) {
+  background: var(--color-warning-light) !important;
+}
+
+.suggest-list__meal-icon {
+  color: var(--color-warning);
+  flex-shrink: 0;
+  vertical-align: middle;
+  margin-right: 0.2rem;
 }
 
 .suggest-list {
@@ -1737,4 +1922,110 @@
   z-index: 200;
   animation: toast-in 0.2s ease;
   white-space: nowrap;
+}
+
+/* Stop-type toggle button */
+.location-list__stop-type {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--color-gray-300);
+  cursor: pointer;
+  padding: 0.125rem 0.25rem;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.location-list__stop-type:hover {
+  color: var(--color-gray-500);
+}
+
+.location-list__stop-type--meal {
+  color: var(--color-warning);
+}
+
+.location-list__stop-type--meal:hover {
+  color: var(--color-warning-hover, var(--color-warning));
+}
+
+.location-list__stop-type--accommodation {
+  color: var(--color-primary);
+}
+
+/* Meal location item */
+.location-list__item--meal {
+  background: var(--color-warning-light);
+  border-left: 2px solid var(--color-warning);
+}
+
+/* Accommodation card at bottom of day */
+.day-accommodation {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 8px;
+  border-left: 3px solid var(--color-primary);
+}
+
+.day-accommodation__icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.day-accommodation__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.day-accommodation__label {
+  font-size: 0.6875rem;
+  color: var(--color-gray-400);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.day-accommodation__name {
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-gray-900);
+  padding: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.day-accommodation__name:hover {
+  color: var(--color-primary);
+}
+
+.day-accommodation__reset {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--color-gray-400);
+  cursor: pointer;
+  padding: 0.25rem;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.day-accommodation__reset:hover {
+  color: var(--color-gray-700);
 }

@@ -182,6 +182,17 @@ Shows "Day X selected — click the map to add a location" when a day is open
 - Selecting a date calls `updateDayDate` server action, re-sorts list, updates `dayNumber` if order changed
 - When a custom date is set: badge turns blue (`.day-list__date--custom`); calendar icon turns primary color
 
+### Days jump calendar (TripDetail.tsx)
+- Small `CalendarDays` icon button (`.trip-detail__days-cal-btn`) appears next to the "Days" heading — only shown when ≥1 day has a date assigned
+- Wrapped in `.trip-detail__days-heading-row` (flex row with the heading); `.trip-detail__days-cal-wrap` holds the button + absolute-positioned picker
+- Opens a `DayPicker mode="single"` in `.trip-detail__days-cal-picker`; all dates without an assigned day are disabled; available dates show a colored dot per day
+- Colored dots via `customDayComponents` — a `useMemo` on `dayItems` that builds `datedDaysMap` (dateKey→dayId) and `colorMap` (dateKey→hex), then returns `{ DayButton: CalDayButton }` component that renders a 5px circle below the date number
+- `DAY_COLORS` (same 10-color array as `MapView.tsx`) and `toLocalDateKey(date): string` (local-time `YYYY-MM-DD`) defined at module level in `TripDetail.tsx`
+- Clicking a dated cell: calls `handleDaysCalendarSelect` → looks up dayId in `datedDaysMap` → calls `handleDayClick(dayId)` → closes picker
+- Outside-click `useEffect` on `showDaysCalendar` closes the picker; `e.stopPropagation()` on the wrap prevents immediate close on open
+- CSS: `.trip-detail__days-heading-row`, `.trip-detail__days-cal-wrap`, `.trip-detail__days-cal-btn`, `.trip-detail__days-cal-btn--open`, `.trip-detail__days-cal-picker` (mirrors `.trip-detail__date-picker-wrap` overrides + `--rdp-day-height: 38px` to fit dot), `.trip-detail__cal-day-dot` (5×5px circle, `flex-shrink: 0`), `.trip-detail__days-cal-picker .rdp-day_button { flex-direction: column; gap: 1px }`
+- ⚠️ Main trip range picker has NO colored dots — `customDayComponents` is only passed to the days jump calendar
+
 ### Switch days (TripDetail.tsx)
 - **No drag-reorder for days** — replaced by a two-step "Switch days" flow
 - "Switch days" button in days header (shown when ≥2 days); `switchDaysMode: boolean`, `switchFirstDayId`, `switchSecondDayId` states
@@ -354,6 +365,7 @@ Shows "Day X selected — click the map to add a location" when a day is open
 36. Map marker selection — clicking any marker (overview or single-day mode) selects the location: sets `focusedLocationIdAtom` (amber highlight on badge + marker) and scrolls the list to that item; in overview mode also opens the day via `selectedDayIdAtom`
 37. Day color dot — small 8px circle after "Day N" in each day header, colored to match that day's map color (`--color-day-N`); `day-list__item--color-N` class drives `--day-color` variable; border-left stays primary blue for the active state
 38. Trip style selector — multi-select dropdown in the trip header actions row (between dates and share); options: First Time, Classic, Alternative, Adventure, Relaxed, Cultural, Culinary, Family, **Historic** (9 total); saved to `Trip.tripStyle String[]` via `updateTripStyle` action; button always shows "Trip style" (selected styles displayed in stats row instead); affects suggestion categories (`STYLE_CATEGORIES` map in TripDetail.tsx); `Historic` categories: `historic_site, monument, castle, archaeological_site, landmark`; "Suggest first location" available even on empty days (geocodes trip destination); dropdown stays open until manually toggled closed
+39. Days jump calendar — `CalendarDays` icon button next to the "Days" heading; opens a calendar showing colored dots (matching each day's map color) only on dates that have an assigned day; all other dates are disabled; clicking a dated cell opens that day in the list; closes on outside click
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)

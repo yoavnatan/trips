@@ -24,10 +24,10 @@ import {
   Plane, Clock, CircleCheck, Pencil,
   ChevronDown, ChevronUp, ArrowUpDown, Check, X,
   GripVertical, ArrowLeft, CalendarDays, Share2, MapPin, Navigation,
-  MoreVertical, Trash2, Info, ArrowLeftRight, Tag,
+  MoreVertical, Trash2, Info, ArrowLeftRight, Tag, UtensilsCrossed, Bed,
 } from 'lucide-react'
 import { DayPicker } from 'react-day-picker'
-import type { DateRange } from 'react-day-picker'
+import type { DateRange, DayButtonProps } from 'react-day-picker'
 import 'react-day-picker/src/style.css'
 import { selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, focusedLocationIdAtom, segmentModesAtom, segmentSummaryAtom, dayRouteGeoJSONAtom, dayRouteTotalAtom } from '@/lib/store'
 import { addDay } from '@/app/actions/addDay'
@@ -44,7 +44,8 @@ import { swapDayDates } from '@/app/actions/swapDayDates'
 import { updateDaySummary } from '@/app/actions/updateDaySummary'
 import { markAllLocationsVisited } from '@/app/actions/markAllLocationsVisited'
 import { updateTripStyle } from '@/app/actions/updateTripStyle'
-import { haversineDistance, formatDistance } from '@/lib/utils'
+import { updateLocationStopType } from '@/app/actions/updateLocationStopType'
+import { haversineDistance, formatDistance, dayColorIndex } from '@/lib/utils'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import type { TripWithDaysAndLocations, DayWithLocations, ActionState, SuggestedLocation, LocationPoint, TransportMode, RouteGeoJSON } from '@/types'
 
@@ -53,8 +54,6 @@ interface ConfirmState {
   message: string
   onConfirm: () => void
 }
-
-const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
 
 const TRIP_STYLES = [
   'First Time',
@@ -81,6 +80,17 @@ const STYLE_CATEGORIES: Record<string, string[]> = {
 }
 
 const DEFAULT_CATEGORIES = ['tourist_attraction', 'historic_site', 'art_gallery', 'viewpoint', 'museum']
+const MEAL_CATEGORIES = ['restaurant', 'cafe', 'fast_food', 'bar']
+
+const DAY_COLORS = [
+  '#2563eb', '#e11d48', '#16a34a', '#f97316',
+  '#7c3aed', '#0d9488', '#ca8a04', '#9333ea',
+  '#0891b2', '#b45309',
+]
+
+function toLocalDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
 
 const MODE_LABELS: Record<TransportMode, string> = {
   driving: 'Drive',
@@ -164,8 +174,7 @@ const initialState: ActionState = {}
 async function geocodeDestination(destination: string): Promise<{ lat: number; lng: number } | null> {
   try {
     const res = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(destination)}.json` +
-        `?limit=1&types=place,locality,region,country&access_token=${TOKEN}`
+      `/api/mapbox/geocode?query=${encodeURIComponent(destination)}&types=place,locality,region,country&limit=1`
     )
     if (!res.ok) return null
     const data = await res.json() as { features?: Array<{ center: [number, number] }> }
@@ -195,8 +204,7 @@ async function fetchNearbySuggestions(lat: number, lng: number, exclude: string[
     categories.map(async (category): Promise<SuggestedLocation | null> => {
       try {
         const res = await fetch(
-          `https://api.mapbox.com/search/searchbox/v1/category/${category}` +
-            `?proximity=${lng},${lat}&limit=3&access_token=${TOKEN}`
+          `/api/mapbox/suggest?category=${encodeURIComponent(category)}&lat=${lat}&lng=${lng}&limit=3`
         )
         if (!res.ok) return null
         const data = await res.json()
@@ -221,6 +229,38 @@ async function fetchNearbySuggestions(lat: number, lng: number, exclude: string[
   return results.filter((r): r is SuggestedLocation => r !== null)
 }
 
+async function fetchMealSuggestions(lat: number, lng: number, exclude: string[]): Promise<SuggestedLocation[]> {
+  const allResults = await Promise.all(
+    MEAL_CATEGORIES.map(async (category): Promise<SuggestedLocation[]> => {
+      try {
+        const res = await fetch(
+          `/api/mapbox/suggest?category=${encodeURIComponent(category)}&lat=${lat}&lng=${lng}&limit=4`
+        )
+        if (!res.ok) return []
+        const data = await res.json()
+        const features = (data.features ?? []) as Array<{
+          properties: { name: string; categories?: string[]; poi_category?: string[] }
+          geometry: { coordinates: [number, number] }
+        }>
+        return features
+          .filter((f) => !exclude.includes(f.properties.name))
+          .slice(0, 2)
+          .map((f) => ({
+            name: f.properties.name,
+            lng: f.geometry.coordinates[0],
+            lat: f.geometry.coordinates[1],
+            category,
+            poiCategories: f.properties.categories ?? f.properties.poi_category ?? [],
+            stopType: 'meal',
+          }))
+      } catch {
+        return []
+      }
+    })
+  )
+  return allResults.flat()
+}
+
 export function TripDetail({ trip, onBack }: TripDetailProps) {
   const router = useRouter()
   const [state, formAction, pending] = useActionState(addDay, initialState)
@@ -232,6 +272,8 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   const setFocusedLocation = useSetAtom(focusedLocationAtom)
   const [suggestions, setSuggestions] = useState<SuggestedLocation[]>([])
   const [suggestingForDayId, setSuggestingForDayId] = useState<string | null>(null)
+  const [suggestMode, setSuggestMode] = useState<'place' | 'meal'>('place')
+  const mealCacheRef = useRef<Map<string, SuggestedLocation[]>>(new Map())
   const [suggestLoading, setSuggestLoading] = useState(false)
   const [seenNames, setSeenNames] = useState<Record<string, string[]>>({})
   const [deletingLocationId, setDeletingLocationId] = useState<string | null>(null)
@@ -251,6 +293,29 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   const [summaryDraft, setSummaryDraft] = useState('')
   const [tripStyles, setTripStyles] = useState<string[]>(trip.tripStyle ?? [])
   const [styleDropdownOpen, setStyleDropdownOpen] = useState(false)
+  const [showDaysCalendar, setShowDaysCalendar] = useState(false)
+
+  const { datedDaysMap, customDayComponents } = useMemo(() => {
+    const datedDaysMap = new Map<string, string>() // dateKey -> dayId
+    const colorMap = new Map<string, string>()     // dateKey -> color
+    dayItems.forEach((day, idx) => {
+      if (day.date) {
+        const key = toLocalDateKey(new Date(day.date))
+        datedDaysMap.set(key, day.id)
+        colorMap.set(key, DAY_COLORS[dayColorIndex(day.id)])
+      }
+    })
+    function CalDayButton({ day, modifiers, children, ...buttonProps }: DayButtonProps) {
+      const color = colorMap.get(toLocalDateKey(day.date))
+      return (
+        <button {...buttonProps}>
+          {children}
+          {color && <span className="trip-detail__cal-day-dot" style={{ backgroundColor: color }} />}
+        </button>
+      )
+    }
+    return { datedDaysMap, customDayComponents: { DayButton: CalDayButton } }
+  }, [dayItems])
 
   useEffect(() => {
     if (!menuOpenDayId) return
@@ -265,6 +330,13 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
     document.addEventListener('click', handleOutsideClick)
     return () => document.removeEventListener('click', handleOutsideClick)
   }, [dayDatePickerId])
+
+  useEffect(() => {
+    if (!showDaysCalendar) return
+    function handleOutsideClick() { setShowDaysCalendar(false) }
+    document.addEventListener('click', handleOutsideClick)
+    return () => document.removeEventListener('click', handleOutsideClick)
+  }, [showDaysCalendar])
 
 
   useEffect(() => {
@@ -382,17 +454,38 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
     setReorderMode(false)
   }
 
+  function handleDaysCalendarSelect(date: Date | undefined): void {
+    if (!date) return
+    const dayId = datedDaysMap.get(toLocalDateKey(date))
+    if (!dayId) return
+    setShowDaysCalendar(false)
+    handleDayClick(dayId)
+  }
+
   async function handleRangeSelect(range: DateRange | undefined): Promise<void> {
     const result = await updateTrip(trip.id, range?.from ?? null, range?.to ?? null)
     if (result.error) {
       console.error('Date save failed:', result.error)
       return
     }
+    const newStart = range?.from ?? null
+    const newEnd = range?.to ?? null
+    const outOfRange = dayItems.filter((d) => {
+      if (!d.date) return false
+      const t = new Date(d.date).getTime()
+      if (newStart && t < newStart.getTime()) return true
+      if (newEnd && t > newEnd.getTime()) return true
+      return false
+    })
+    if (outOfRange.length > 0) {
+      setDayItems((prev) => prev.map((d) => outOfRange.some((o) => o.id === d.id) ? { ...d, date: null } : d))
+      await Promise.all(outOfRange.map((d) => updateDayDate(d.id, null)))
+    }
     router.refresh()
-    if (range?.from && range?.to) setShowDatePicker(false)
   }
 
   async function handleSuggest(dayId: string, lat: number | null, lng: number | null): Promise<void> {
+    setSuggestMode('place')
     setSuggestingForDayId(dayId)
     setSuggestLoading(true)
     setSuggestions([])
@@ -440,7 +533,57 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
     }
   }
 
+  async function handleSuggestMeal(dayId: string, locs: LocationPoint[]): Promise<void> {
+    // Toggle off if already showing meal suggestions for this day
+    if (suggestingForDayId === dayId && suggestMode === 'meal') {
+      setSuggestingForDayId(null)
+      setSuggestions([])
+      return
+    }
+
+    // Show cached results if available
+    const cached = mealCacheRef.current.get(dayId)
+    if (cached && cached.length > 0) {
+      setSuggestMode('meal')
+      setSuggestingForDayId(dayId)
+      setSuggestions(cached)
+      return
+    }
+
+    setSuggestMode('meal')
+    setSuggestingForDayId(dayId)
+    setSuggestLoading(true)
+    setSuggestions([])
+
+    let anchorLat: number
+    let anchorLng: number
+    if (locs.length > 0) {
+      anchorLat = locs.reduce((s, l) => s + l.lat, 0) / locs.length
+      anchorLng = locs.reduce((s, l) => s + l.lng, 0) / locs.length
+    } else {
+      const coords = await geocodeDestination(trip.destination)
+      if (!coords) { setSuggestLoading(false); return }
+      anchorLat = coords.lat
+      anchorLng = coords.lng
+    }
+
+    const allVisited = dayItems.flatMap((d) => d.locations.map((l) => l.name))
+    const exclude = [...new Set([...(seenNames[dayId] ?? []), ...allVisited])]
+    const results = await fetchMealSuggestions(anchorLat, anchorLng, exclude)
+    mealCacheRef.current.set(dayId, results)
+    setSuggestions(results)
+    setSuggestLoading(false)
+  }
+
   function handleSuggestionClick(loc: SuggestedLocation): void {
+    if (loc.stopType === 'meal') {
+      // Remove selected item from cache so it won't show again, keep the rest
+      const dayId = suggestingForDayId
+      if (dayId) {
+        const remaining = (mealCacheRef.current.get(dayId) ?? []).filter((s) => s.name !== loc.name)
+        mealCacheRef.current.set(dayId, remaining)
+      }
+    }
     setSuggestedLocation(loc)
     setSuggestions([])
     setSuggestingForDayId(null)
@@ -512,14 +655,25 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
         <div className="trip-detail__header-top">
           <h2 className="trip-detail__title">{trip.title}</h2>
           <div className="trip-detail__header-actions">
-            <button
-              className={`trip-detail__date-btn${showDatePicker ? ' trip-detail__date-btn--open' : ''}`}
-              onClick={() => setShowDatePicker((p) => !p)}
-              title="Set trip dates"
-            >
-              <CalendarDays size={14} />
-              <span>{formattedDateRange ?? 'Add dates'}</span>
-            </button>
+            <div className="trip-detail__date-wrap">
+              <button
+                className={`trip-detail__date-btn${showDatePicker ? ' trip-detail__date-btn--open' : ''}`}
+                onClick={() => setShowDatePicker((p) => !p)}
+                title="Set trip dates"
+              >
+                <CalendarDays size={14} />
+                <span>{formattedDateRange ?? 'Add dates'}</span>
+              </button>
+              {showDatePicker && (
+                <div className="trip-detail__date-picker-wrap">
+                  <DayPicker
+                    mode="range"
+                    selected={{ from: startDate ?? undefined, to: endDate ?? undefined }}
+                    onSelect={(range) => void handleRangeSelect(range)}
+                  />
+                </div>
+              )}
+            </div>
             <div className="trip-detail__style-wrap" onClick={(e) => e.stopPropagation()}>
               <button
                 className={`trip-detail__date-btn${styleDropdownOpen ? ' trip-detail__date-btn--open' : ''}${tripStyles.length > 0 ? ' trip-detail__date-btn--set' : ''}`}
@@ -569,20 +723,35 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
           </div>
         )}
 
-        {showDatePicker && (
-          <div className="trip-detail__date-picker-wrap">
-            <DayPicker
-              mode="range"
-              selected={{ from: startDate ?? undefined, to: endDate ?? undefined }}
-              onSelect={(range) => void handleRangeSelect(range)}
-            />
-          </div>
-        )}
       </div>
 
       <div className="trip-detail__days">
         <div className="trip-detail__days-header">
-          <h3 className="trip-detail__days-heading">Days</h3>
+          <div className="trip-detail__days-heading-row">
+            <h3 className="trip-detail__days-heading">Days</h3>
+            {datedDaysMap.size > 0 && (
+              <div className="trip-detail__days-cal-wrap" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className={`trip-detail__days-cal-btn${showDaysCalendar ? ' trip-detail__days-cal-btn--open' : ''}`}
+                  onClick={() => setShowDaysCalendar((p) => !p)}
+                  title="Jump to day by date"
+                >
+                  <CalendarDays size={13} />
+                </button>
+                {showDaysCalendar && (
+                  <div className="trip-detail__days-cal-picker">
+                    <DayPicker
+                      mode="single"
+                      disabled={(date) => !datedDaysMap.has(toLocalDateKey(date))}
+                      onSelect={handleDaysCalendarSelect}
+                      defaultMonth={dayItems.find((d) => d.date) ? new Date(dayItems.find((d) => d.date)!.date!) : (startDate ?? undefined)}
+                      components={customDayComponents}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           {dayItems.length >= 2 && switchDaysMode && switchFirstDayId && switchSecondDayId ? (
             <button
               className="trip-detail__reorder-days-btn trip-detail__reorder-days-btn--confirm"
@@ -626,7 +795,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                 : null
 
               return (
-                <li key={day.id} className={`day-list__item day-list__item--color-${dayIdx % 10}${isOpen ? ' day-list__item--active' : ''}`}>
+                <li key={day.id} className={`day-list__item day-list__item--color-${dayColorIndex(day.id)}${isOpen ? ' day-list__item--active' : ''}`}>
                   <div className="day-list__header-row">
                     {switchDaysMode && (
                       <button
@@ -670,13 +839,35 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                       </span>
                     </button>
                     {!switchDaysMode && (
-                      <button
-                        className={`day-list__cal-btn${customDate ? ' day-list__cal-btn--set' : ''}`}
-                        onClick={(e) => { e.stopPropagation(); setDayDatePickerId(dayDatePickerId === day.id ? null : day.id); setMenuOpenDayId(null) }}
-                        title={customDate ? 'Change date' : 'Set date'}
-                      >
-                        <CalendarDays size={14} />
-                      </button>
+                      <div className="day-list__cal-wrap">
+                        <button
+                          className={`day-list__cal-btn${customDate ? ' day-list__cal-btn--set' : ''}`}
+                          onClick={(e) => { e.stopPropagation(); setDayDatePickerId(dayDatePickerId === day.id ? null : day.id); setMenuOpenDayId(null) }}
+                          title={customDate ? 'Change date' : 'Set date'}
+                        >
+                          <CalendarDays size={14} />
+                        </button>
+                        {dayDatePickerId === day.id && (
+                          <div className="day-list__day-picker-wrap" onClick={(e) => e.stopPropagation()}>
+                            <DayPicker
+                              mode="single"
+                              selected={customDate ?? undefined}
+                              onSelect={(date) => void handleDayDateSelect(day.id, date)}
+                              disabled={[
+                                ...dayItems.filter((d) => d.id !== day.id && d.date).map((d) => new Date(d.date!)),
+                                ...(startDate ? [{ before: startDate }] : []),
+                                ...(endDate ? [{ after: endDate }] : []),
+                              ]}
+                              defaultMonth={customDate ?? startDate ?? undefined}
+                            />
+                            {customDate && (
+                              <button className="day-list__day-picker-clear" onClick={() => void handleDayDateSelect(day.id, undefined)}>
+                                Clear date
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                     <div className="day-list__menu">
                       <button
@@ -737,26 +928,6 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                     </div>
                   </div>
 
-                  {dayDatePickerId === day.id && (
-                    <div className="day-list__day-picker-wrap" onClick={(e) => e.stopPropagation()}>
-                      <DayPicker
-                        mode="single"
-                        selected={customDate ?? undefined}
-                        onSelect={(date) => void handleDayDateSelect(day.id, date)}
-                        disabled={[
-                          ...dayItems.filter((d) => d.id !== day.id && d.date).map((d) => new Date(d.date!)),
-                          ...(startDate ? [{ before: startDate }] : []),
-                          ...(endDate ? [{ after: endDate }] : []),
-                        ]}
-                        defaultMonth={customDate ?? startDate ?? undefined}
-                      />
-                      {customDate && (
-                        <button className="day-list__day-picker-clear" onClick={() => void handleDayDateSelect(day.id, undefined)}>
-                          Clear date
-                        </button>
-                      )}
-                    </div>
-                  )}
 
                   {isOpen && (
                     <div className="day-list__body">
@@ -790,28 +961,76 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
 
                       {locs.length === 0 ? (
                         <p className="day-list__hint">Click anywhere on the map to add your first location</p>
-                      ) : (
-                        <SortableLocationList
-                          locs={locs}
-                          city={trip.destination}
-                          deletingLocationId={deletingLocationId}
-                          reorderMode={reorderMode}
-                          tripStyles={tripStyles}
-                          onFocus={(loc) => setFocusedLocation({ lat: loc.lat, lng: loc.lng })}
-                          onDelete={(loc) => handleDeleteLocation(loc.id, loc.name)}
-                        />
-                      )}
+                      ) : (() => {
+                        const accommodation = locs.filter((l) => l.stopType === 'accommodation')
+                        const placeLocs = locs.filter((l) => l.stopType !== 'accommodation')
+                        return (
+                          <>
+                            {placeLocs.length > 0 && (
+                              <SortableLocationList
+                                locs={placeLocs}
+                                city={trip.destination}
+                                deletingLocationId={deletingLocationId}
+                                reorderMode={reorderMode}
+                                tripStyles={tripStyles}
+                                onFocus={(loc) => setFocusedLocation({ lat: loc.lat, lng: loc.lng })}
+                                onDelete={(loc) => handleDeleteLocation(loc.id, loc.name)}
+                              />
+                            )}
+                            {accommodation.map((hotel) => (
+                              <div key={hotel.id} className="day-accommodation">
+                                <div className="day-accommodation__icon"><Bed size={15} /></div>
+                                <div className="day-accommodation__content">
+                                  <span className="day-accommodation__label">Staying at</span>
+                                  <button
+                                    className="day-accommodation__name"
+                                    onClick={() => { setFocusedLocationId(hotel.id); setFocusedLocation({ lat: hotel.lat, lng: hotel.lng }) }}
+                                  >
+                                    {hotel.name}
+                                  </button>
+                                </div>
+                                <button
+                                  className="day-accommodation__reset"
+                                  onClick={async () => { await updateLocationStopType(hotel.id, 'place'); router.refresh() }}
+                                  title="Move back to list"
+                                >
+                                  <ArrowUpDown size={12} />
+                                </button>
+                                <button
+                                  className="location-list__delete"
+                                  onClick={() => handleDeleteLocation(hotel.id, hotel.name)}
+                                  title="Remove"
+                                >
+                                  <X size={13} />
+                                </button>
+                              </div>
+                            ))}
+                          </>
+                        )
+                      })()}
 
                       {locs.length >= 2 && <DayRoute locs={locs} />}
 
                       <div className="day-list__suggest">
-                        <button
-                          className="day-list__suggest-btn"
-                          onClick={() => handleSuggest(day.id, lastLoc?.lat ?? null, lastLoc?.lng ?? null)}
-                          disabled={suggestLoading && suggestingForDayId === day.id}
-                        >
-                          {suggestLoading && suggestingForDayId === day.id ? 'Loading…' : locs.length === 0 ? '+ Suggest first location' : '+ Suggest next location'}
-                        </button>
+                        <div className="day-list__suggest-row">
+                          <button
+                            className="day-list__suggest-btn"
+                            onClick={() => handleSuggest(day.id, lastLoc?.lat ?? null, lastLoc?.lng ?? null)}
+                            disabled={suggestLoading && suggestingForDayId === day.id}
+                          >
+                            {suggestLoading && suggestingForDayId === day.id ? 'Loading…' : locs.length === 0 ? '+ Suggest first location' : '+ Suggest next location'}
+                          </button>
+                          {locs.length > 0 && (
+                            <button
+                              className="day-list__suggest-btn day-list__suggest-btn--meal"
+                              onClick={() => void handleSuggestMeal(day.id, locs)}
+                              disabled={suggestLoading && suggestingForDayId === day.id}
+                            >
+                              <UtensilsCrossed size={12} />
+                              Suggest meal
+                            </button>
+                          )}
+                        </div>
                         {suggestingForDayId === day.id && suggestions.length > 0 && (
                           <ul className="suggest-list">
                             {suggestions.map((s) => {
@@ -825,6 +1044,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                                     onClick={() => handleSuggestionClick(s)}
                                   >
                                     <span className="suggest-list__name">
+                                      {s.stopType === 'meal' && <UtensilsCrossed size={11} className="suggest-list__meal-icon" />}
                                       {s.name}
                                       {s.englishName && (
                                         <span className="suggest-list__english">{s.englishName}</span>
@@ -902,48 +1122,37 @@ type WalkResult = { coordinates: number[][]; distKm: number; durSecs: number }
 type OsmStopNode = { type: 'node'; id: number; lat: number; lon: number; tags?: Record<string, string> }
 type OsmRoute = { type: 'relation'; tags?: Record<string, string>; members: Array<{ type: string; ref: number }> }
 
+const transitStopCache = new Map<string, TransitStop | null>()
+const transitStopInFlight = new Map<string, Promise<TransitStop | null>>()
+
 async function findNearestStop(lat: number, lng: number): Promise<TransitStop | null> {
-  const query =
-    `[out:json][timeout:12];` +
-    `(node["highway"="bus_stop"](around:600,${lat},${lng});` +
-    `node["railway"="subway_entrance"](around:600,${lat},${lng});` +
-    `node["railway"="station"](around:600,${lat},${lng});` +
-    `node["railway"="tram_stop"](around:600,${lat},${lng});` +
-    `node["public_transport"="stop_position"]["name"](around:600,${lat},${lng});` +
-    `)->.stops;.stops out 10;` +
-    `rel(bn.stops)["type"="route"]["route"~"bus|tram|subway|train|metro|ferry|monorail|light_rail"];out;`
-  try {
-    const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query })
-    if (!res.ok) return null
-    const data = await res.json()
-    const elements = data.elements as Array<OsmStopNode | OsmRoute>
+  const key = `${lat.toFixed(3)},${lng.toFixed(3)}`
+  if (transitStopCache.has(key)) return transitStopCache.get(key) ?? null
+  if (transitStopInFlight.has(key)) return transitStopInFlight.get(key)!
 
-    const nodes = elements.filter((e): e is OsmStopNode => e.type === 'node')
-    const routes = elements.filter((e): e is OsmRoute => e.type === 'relation')
-    if (!nodes.length) return null
-
-    let best = nodes[0]
-    let bestDist = haversineDistance(lat, lng, best.lat, best.lon)
-    for (const n of nodes.slice(1)) {
-      const d = haversineDistance(lat, lng, n.lat, n.lon)
-      if (d < bestDist) { bestDist = d; best = n }
+  const promise = (async () => {
+    try {
+      const res = await fetch(`/api/overpass/stop?lat=${lat}&lng=${lng}`)
+      if (!res.ok) { transitStopCache.set(key, null); return null }
+      const data = await res.json() as { stop: TransitStop | null }
+      transitStopCache.set(key, data.stop)
+      return data.stop
+    } catch {
+      transitStopCache.set(key, null)
+      return null
+    } finally {
+      transitStopInFlight.delete(key)
     }
+  })()
 
-    const servingRoutes = routes.filter((r) => r.members.some((m) => m.type === 'node' && m.ref === best.id))
-    const lines = servingRoutes.map((r) => r.tags?.ref ?? r.tags?.short_name).filter((s): s is string => Boolean(s)).slice(0, 6)
-    const primaryRouteType = servingRoutes[0]?.tags?.route ?? 'bus'
-
-    return { lat: best.lat, lng: best.lon, name: best.tags?.name ?? best.tags?.ref ?? 'Stop', lines, primaryRouteType }
-  } catch {
-    return null
-  }
+  transitStopInFlight.set(key, promise)
+  return promise
 }
 
-async function fetchWalkRoute(from: { lat: number; lng: number }, to: { lat: number; lng: number }, token: string): Promise<WalkResult | null> {
-  const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`
+async function fetchWalkRoute(from: { lat: number; lng: number }, to: { lat: number; lng: number }): Promise<WalkResult | null> {
   try {
     const res = await fetch(
-      `https://api.mapbox.com/directions/v5/mapbox/walking/${coords}?access_token=${token}&geometries=geojson&overview=full`
+      `/api/mapbox/directions?from=${from.lng},${from.lat}&to=${to.lng},${to.lat}&mode=walking`
     )
     if (!res.ok) return null
     const data = await res.json()
@@ -963,14 +1172,11 @@ async function fetchWalkRoute(from: { lat: number; lng: number }, to: { lat: num
 async function fetchSegmentRoute(
   from: LocationPoint,
   to: LocationPoint,
-  mode: Exclude<TransportMode, 'transit'>,
-  token: string
+  mode: Exclude<TransportMode, 'transit'>
 ): Promise<{ distance: string; duration: string; distKm: number; durSecs: number; geojson: RouteGeoJSON } | null> {
-  const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`
   try {
     const res = await fetch(
-      `https://api.mapbox.com/directions/v5/mapbox/${mode}/${coords}` +
-        `?access_token=${token}&geometries=geojson&overview=full`
+      `/api/mapbox/directions?from=${from.lng},${from.lat}&to=${to.lng},${to.lat}&mode=${mode}`
     )
     if (!res.ok) return null
     const data = await res.json()
@@ -1008,7 +1214,8 @@ type SegResult = {
 } | null | 'loading'
 
 function computeDayDifficulty(locs: LocationPoint[], segmentModes: Record<string, TransportMode>): 'easy' | 'moderate' | 'hard' | null {
-  if (locs.length < 2) return null
+  if (locs.length === 0) return null
+  if (locs.length === 1) return 'easy'
   let activeKm = 0
   let totalKm = 0
   for (let i = 0; i < locs.length - 1; i++) {
@@ -1109,8 +1316,8 @@ async function fetchSegmentTransit(from: LocationPoint, to: LocationPoint): Prom
   if (!fromStop && !toStop) return straightLineTransitResult(from, to)
 
   const [walkFrom, walkTo] = await Promise.all([
-    fromStop ? fetchWalkRoute(from, fromStop, TOKEN) : Promise.resolve(null),
-    toStop ? fetchWalkRoute(toStop, to, TOKEN) : Promise.resolve(null),
+    fromStop ? fetchWalkRoute(from, fromStop) : Promise.resolve(null),
+    toStop ? fetchWalkRoute(toStop, to) : Promise.resolve(null),
   ])
 
   const features: RouteGeoJSON['features'] = []
@@ -1162,7 +1369,7 @@ function SegmentRoutePanel({ from, to }: { from: LocationPoint; to: LocationPoin
 
   useEffect(() => {
     ;(['driving', 'walking', 'cycling'] as Array<Exclude<TransportMode, 'transit' | 'ferry' | 'flight'>>).forEach((m) => {
-      fetchSegmentRoute(from, to, m, TOKEN).then((r) => {
+      fetchSegmentRoute(from, to, m).then((r) => {
         setResults((prev) => ({ ...prev, [m]: r }))
       })
     })
@@ -1257,7 +1464,7 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
 
     for (const { from, to, key } of pairs) {
       ;(['driving', 'walking', 'cycling'] as Array<Exclude<TransportMode, 'transit' | 'ferry' | 'flight'>>).forEach((m) => {
-        fetchSegmentRoute(from, to, m, TOKEN).then((r) => {
+        fetchSegmentRoute(from, to, m).then((r) => {
           setAllData((prev) => ({ ...prev, [key]: { ...prev[key], [m]: r } }))
         })
       })
@@ -1443,6 +1650,18 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
   const [startingAddress, setStartingAddress] = useState('')
   const [visited, setVisited] = useState(loc.visited)
   useEffect(() => { setVisited(loc.visited) }, [loc.visited])
+  const [stopType, setStopType] = useState(loc.stopType ?? 'place')
+
+  async function handleCycleStopType() {
+    const next = stopType === 'place' ? 'meal' : stopType === 'meal' ? 'accommodation' : 'place'
+    setStopType(next)
+    try {
+      await updateLocationStopType(loc.id, next)
+      router.refresh()
+    } catch {
+      setStopType(stopType)
+    }
+  }
   const infoCacheKey = `${loc.name}|${city}|${loc.lat}|${loc.lng}`
   const nameCacheKey = `${loc.name}|${city}`
   const [durationHint, setDurationHint] = useState<string | null>(() => placeInfoCache.get(infoCacheKey)?.ai?.duration ?? null)
@@ -1478,7 +1697,7 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
   }
 
   return (
-    <li ref={(el) => { setNodeRef(el); itemRef.current = el }} style={style} className="location-list__item">
+    <li ref={(el) => { setNodeRef(el); itemRef.current = el }} style={style} className={`location-list__item${stopType === 'meal' ? ' location-list__item--meal' : ''}`}>
       <div className="location-list__row">
         {reorderMode ? (
           <span className="location-list__drag-handle" {...attributes} {...listeners} title="Drag to reorder">
@@ -1512,6 +1731,15 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
             </button>
           )}
         </div>
+        {!reorderMode && (
+          <button
+            className={`location-list__stop-type${stopType !== 'place' ? ` location-list__stop-type--${stopType}` : ''}`}
+            onClick={() => void handleCycleStopType()}
+            title={stopType === 'meal' ? 'Meal stop — click to mark as accommodation' : stopType === 'accommodation' ? 'Accommodation — click to clear' : 'Mark as meal stop'}
+          >
+            {stopType === 'accommodation' ? <Bed size={13} /> : <UtensilsCrossed size={13} />}
+          </button>
+        )}
         <button
           className={`location-list__visited${visited ? ' location-list__visited--done' : ''}`}
           onClick={() => void handleToggleVisited()}
@@ -1751,7 +1979,7 @@ function LocationInfoPanel({ name, city, lat, lng, onDurationLoaded }: {
           <div className="location-info__actions">
             <a
               className="location-info__action-link"
-              href={`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`}
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name}, ${city}`)}`}
               target="_blank"
               rel="noopener noreferrer"
             >

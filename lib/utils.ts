@@ -13,3 +13,9 @@ export function formatDistance(km: number): string {
   if (km < 1) return `${Math.round(km * 1000)} m`
   return `${km.toFixed(1)} km`
 }
+
+export function dayColorIndex(id: string): number {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffff
+  return h % 10
+}

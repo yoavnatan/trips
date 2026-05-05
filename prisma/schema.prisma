@@ -51,4 +51,5 @@ model LocationPoint {
   name       String
   notes      String?
   visited    Boolean @default(false)
+  stopType   String  @default("place")
 }

@@ -11,8 +11,9 @@ import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom, focusedLoca
 import { addLocationPoint } from '@/app/actions/addLocationPoint'
 import { updateLocation } from '@/app/actions/updateLocation'
 import type { TripWithDaysAndLocations, ActionState, LocationPoint, TransportMode } from '@/types'
+import { dayColorIndex } from '@/lib/utils'
 
-const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
+const MAP_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
 
 const ROUTE_COLORS: Record<TransportMode, string> = {
   driving: '#ef4444',
@@ -62,10 +63,7 @@ function getNamesFromMap(mapRef: React.RefObject<MapRef | null>, point: { x: num
 
 async function reverseGeocodeApi(lat: number, lng: number): Promise<string[]> {
   try {
-    const res = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json` +
-        `?access_token=${TOKEN}&types=poi,address&language=en`
-    )
+    const res = await fetch(`/api/mapbox/reverse?lat=${lat}&lng=${lng}&types=poi,address&limit=5`)
     if (!res.ok) return []
     const data = await res.json()
     return (data.features ?? [])
@@ -78,10 +76,7 @@ async function reverseGeocodeApi(lat: number, lng: number): Promise<string[]> {
 
 async function reverseGeocodeDestination(lat: number, lng: number): Promise<string | null> {
   try {
-    const res = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json` +
-        `?access_token=${TOKEN}&types=place,region,country&language=en&limit=1`
-    )
+    const res = await fetch(`/api/mapbox/reverse?lat=${lat}&lng=${lng}&types=place,region,country&limit=1`)
     if (!res.ok) return null
     const data = await res.json()
     const feature = data.features?.[0]
@@ -98,10 +93,7 @@ async function reverseGeocodeDestination(lat: number, lng: number): Promise<stri
 
 async function forwardGeocode(query: string): Promise<[number, number] | null> {
   try {
-    const res = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json` +
-        `?access_token=${TOKEN}&limit=1`
-    )
+    const res = await fetch(`/api/mapbox/geocode?query=${encodeURIComponent(query)}&limit=1`)
     const data = await res.json()
     return (data.features?.[0]?.center as [number, number]) ?? null
   } catch {
@@ -135,6 +127,7 @@ interface PendingPoint {
   lng: number
   suggestions: string[]
   loading: boolean
+  stopType?: string
 }
 
 export function MapView({ trips }: MapViewProps) {
@@ -189,7 +182,7 @@ export function MapView({ trips }: MapViewProps) {
   useEffect(() => {
     if (!suggestedLocation || !mapLoaded) return
     mapRef.current?.flyTo({ center: [suggestedLocation.lng, suggestedLocation.lat], zoom: 15, duration: 1000 })
-    setPendingPoint({ lat: suggestedLocation.lat, lng: suggestedLocation.lng, suggestions: [suggestedLocation.name], loading: false })
+    setPendingPoint({ lat: suggestedLocation.lat, lng: suggestedLocation.lng, suggestions: [suggestedLocation.name], loading: false, stopType: suggestedLocation.stopType })
     setSuggestedLocation(null)
   }, [suggestedLocation, mapLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -211,7 +204,7 @@ export function MapView({ trips }: MapViewProps) {
 
   const overviewRouteGeoJSON = {
     type: 'FeatureCollection' as const,
-    features: overviewDays.flatMap((day, dayIdx) => {
+    features: overviewDays.flatMap((day) => {
       if (day.locations.length < 2) return []
       return [{
         type: 'Feature' as const,
@@ -219,7 +212,7 @@ export function MapView({ trips }: MapViewProps) {
           type: 'LineString' as const,
           coordinates: day.locations.map((l) => [l.lng, l.lat]),
         },
-        properties: { color: DAY_COLORS[dayIdx % DAY_COLORS.length] },
+        properties: { color: DAY_COLORS[dayColorIndex(day.id)] },
       }]
     }),
   }
@@ -271,7 +264,7 @@ export function MapView({ trips }: MapViewProps) {
         <Map
           ref={mapRef}
           initialViewState={{ longitude: 20, latitude: 30, zoom: 1.5 }}
-          mapboxAccessToken={TOKEN}
+          mapboxAccessToken={MAP_TOKEN}
           style={{ width: '100%', height: '100%' }}
           mapStyle="mapbox://styles/mapbox/streets-v12"
           onLoad={() => setMapLoaded(true)}
@@ -296,11 +289,11 @@ export function MapView({ trips }: MapViewProps) {
             </Source>
           )}
 
-          {isOverview && overviewDays.map((day, dayIdx) =>
+          {isOverview && overviewDays.map((day) =>
             day.locations.map((point, locIdx) => (
               <Marker key={point.id} latitude={point.lat} longitude={point.lng}>
                 <div
-                  className={`map-marker map-marker--day-${dayIdx % 10}`}
+                  className={`map-marker map-marker--day-${dayColorIndex(day.id)}`}
                   title={`Day ${day.dayNumber}: ${point.name}`}
                   onClick={(e) => {
                     e.stopPropagation()
@@ -386,6 +379,7 @@ export function MapView({ trips }: MapViewProps) {
                 lng={pendingPoint.lng}
                 suggestions={pendingPoint.suggestions}
                 loading={pendingPoint.loading}
+                stopType={pendingPoint.stopType}
                 onClose={() => setPendingPoint(null)}
               />
             </Popup>
@@ -454,13 +448,14 @@ function EditLocationForm({ location, onClose }: { location: LocationPoint; onCl
 }
 
 function AddPointForm({
-  dayId, lat, lng, suggestions, loading, onClose,
+  dayId, lat, lng, suggestions, loading, stopType, onClose,
 }: {
   dayId: string
   lat: number
   lng: number
   suggestions: string[]
   loading: boolean
+  stopType?: string
   onClose: () => void
 }) {
   const [name, setName] = useState(suggestions[0] ?? '')
@@ -480,6 +475,7 @@ function AddPointForm({
       <input type="hidden" name="dayId" value={dayId} />
       <input type="hidden" name="lat" value={lat} />
       <input type="hidden" name="lng" value={lng} />
+      <input type="hidden" name="stopType" value={stopType ?? 'place'} />
 
       {loading ? (
         <p className="add-point-form__loading">Loading suggestions…</p>

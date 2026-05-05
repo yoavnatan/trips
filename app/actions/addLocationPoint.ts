@@ -10,6 +10,7 @@ const schema = z.object({
   lat: z.number(),
   lng: z.number(),
   name: z.string().min(1, 'Name is required'),
+  stopType: z.string().default('place'),
 })
 
 export async function addLocationPoint(
@@ -40,6 +41,7 @@ export async function addLocationPoint(
         lng: result.data.lng,
         name: result.data.name,
         orderIndex: (lastPoint?.orderIndex ?? 0) + 1,
+        stopType: result.data.stopType,
       },
     })
   } catch (e) {

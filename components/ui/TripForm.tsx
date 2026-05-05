@@ -7,7 +7,6 @@ import { createTrip } from '@/app/actions/createTrip'
 import { mapClickedDestinationAtom } from '@/lib/store'
 import type { ActionState } from '@/types'
 
-const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
 
 interface GeocodeSuggestion {
   place_name: string
@@ -46,8 +45,7 @@ export function TripForm() {
     debounceRef.current = setTimeout(async () => {
       try {
         const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(value)}.json` +
-            `?access_token=${TOKEN}&types=place,locality,region,country&limit=5`
+          `/api/mapbox/geocode?query=${encodeURIComponent(value)}&types=place,locality,region,country&limit=5`
         )
         const data = await res.json()
         const results = (data.features ?? []) as GeocodeSuggestion[]
