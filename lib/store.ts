@@ -12,4 +12,8 @@ export const dayRouteGeoJSONAtom = atom<RouteGeoJSON | null>(null)
 export const segmentModesAtom = atom<Record<string, TransportMode>>({})
 export const segmentSummaryAtom = atom<Record<string, { distance: string; duration: string }>>({})
 export const dayRouteTotalAtom = atom<string | null>(null)
+export const mealSuggestionsAtom = atom<SuggestedLocation[]>([])
+export const hoveredMealIdxAtom = atom<number | null>(null)
+export const showDaysAtom = atom<boolean>(true)
+export const showWishlistAtom = atom<boolean>(false)
 

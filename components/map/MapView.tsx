@@ -7,10 +7,12 @@ import Map, { Marker, Source, Layer, NavigationControl, Popup } from 'react-map-
 import type { MapRef } from 'react-map-gl/mapbox'
 import type { MapMouseEvent } from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, focusedLocationIdAtom, mapClickedDestinationAtom, routeModeAtom, dayRouteGeoJSONAtom } from '@/lib/store'
+import { selectedTripAtom, selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, focusedLocationIdAtom, mapClickedDestinationAtom, dayRouteGeoJSONAtom, mealSuggestionsAtom, hoveredMealIdxAtom, showDaysAtom, showWishlistAtom } from '@/lib/store'
 import { addLocationPoint } from '@/app/actions/addLocationPoint'
+import { addToWishlist } from '@/app/actions/addToWishlist'
 import { updateLocation } from '@/app/actions/updateLocation'
 import type { TripWithDaysAndLocations, ActionState, LocationPoint, TransportMode } from '@/types'
+import { UtensilsCrossed, Bookmark } from 'lucide-react'
 import { dayColorIndex } from '@/lib/utils'
 
 const MAP_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
@@ -130,11 +132,19 @@ interface PendingPoint {
   stopType?: string
 }
 
+interface PendingWishlistPoint {
+  lat: number
+  lng: number
+  suggestions: string[]
+  loading: boolean
+}
+
 export function MapView({ trips }: MapViewProps) {
   const mapRef = useRef<MapRef>(null)
   const [mounted, setMounted] = useState(false)
   const [mapLoaded, setMapLoaded] = useState(false)
   const [pendingPoint, setPendingPoint] = useState<PendingPoint | null>(null)
+  const [pendingWishlistPoint, setPendingWishlistPoint] = useState<PendingWishlistPoint | null>(null)
   const [editingLocation, setEditingLocation] = useState<LocationPoint | null>(null)
   const selectedTrip = useAtomValue(selectedTripAtom)
   const [selectedDayId, setSelectedDayId] = useAtom(selectedDayIdAtom)
@@ -142,8 +152,15 @@ export function MapView({ trips }: MapViewProps) {
   const [focusedLocation, setFocusedLocation] = useAtom(focusedLocationAtom)
   const setMapClickedDestination = useSetAtom(mapClickedDestinationAtom)
   const [focusedLocationId, setFocusedLocationId] = useAtom(focusedLocationIdAtom)
-  const routeMode = useAtomValue(routeModeAtom)
+
   const dayRouteGeoJSON = useAtomValue(dayRouteGeoJSONAtom)
+  const mealSuggestions = useAtomValue(mealSuggestionsAtom)
+  const [hoveredMealIdx, setHoveredMealIdx] = useAtom(hoveredMealIdxAtom)
+  const showDays = useAtomValue(showDaysAtom)
+  const showWishlist = useAtomValue(showWishlistAtom)
+
+  const currentTrip = trips.find((t) => t.id === selectedTrip?.id) ?? null
+  const currentDay = currentTrip?.days.find((d) => d.id === selectedDayId && d.dayNumber > 0) ?? null
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -186,14 +203,20 @@ export function MapView({ trips }: MapViewProps) {
     setSuggestedLocation(null)
   }, [suggestedLocation, mapLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const currentTrip = trips.find((t) => t.id === selectedTrip?.id) ?? null
-  const currentDay = currentTrip?.days.find((d) => d.id === selectedDayId) ?? null
+  useEffect(() => {
+    if (!showWishlist || !mapLoaded || !currentTrip) return
+    const wlLocs = currentTrip.days.find((d) => d.dayNumber === 0)?.locations ?? []
+    if (wlLocs.length === 0) return
+    if (!showDays) fitLocations(mapRef, wlLocs)
+  }, [showWishlist, mapLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const locations = [...(currentDay?.locations ?? [])].sort((a, b) => a.orderIndex - b.orderIndex)
 
-  const isOverview = !selectedDayId && !!currentTrip
+  const isOverview = (!selectedDayId || !currentDay) && !!currentTrip
 
   const overviewDays = isOverview
     ? currentTrip!.days
+        .filter((day) => day.dayNumber > 0)
         .slice()
         .sort((a, b) => a.dayNumber - b.dayNumber)
         .map((day) => ({
@@ -231,10 +254,21 @@ export function MapView({ trips }: MapViewProps) {
 
   async function handleMapClick(e: MapMouseEvent) {
     const { lat, lng } = e.lngLat
+    setFocusedLocationId(null)
 
     if (!selectedDayId) {
-      const destination = await reverseGeocodeDestination(lat, lng)
-      if (destination) setMapClickedDestination(destination)
+      if (currentTrip) {
+        // Trip open but no day selected — offer add to day or wishlist
+        const rendered = getNamesFromMap(mapRef, e.point)
+        setPendingWishlistPoint({ lat, lng, suggestions: rendered, loading: rendered.length === 0 })
+        if (rendered.length === 0) {
+          const apiNames = await reverseGeocodeApi(lat, lng)
+          setPendingWishlistPoint((prev) => prev ? { ...prev, suggestions: apiNames, loading: false } : null)
+        }
+      } else {
+        const destination = await reverseGeocodeDestination(lat, lng)
+        if (destination) setMapClickedDestination(destination)
+      }
       return
     }
 
@@ -274,7 +308,7 @@ export function MapView({ trips }: MapViewProps) {
           <NavigationControl position="top-right" />
 
           {/* Overview mode: all days with distinct colours */}
-          {isOverview && overviewRouteGeoJSON.features.length > 0 && (
+          {isOverview && showDays && overviewRouteGeoJSON.features.length > 0 && (
             <Source id="overview-route" type="geojson" data={overviewRouteGeoJSON}>
               <Layer
                 id="overview-route-lines"
@@ -289,7 +323,7 @@ export function MapView({ trips }: MapViewProps) {
             </Source>
           )}
 
-          {isOverview && overviewDays.map((day) =>
+          {isOverview && showDays && overviewDays.map((day) =>
             day.locations.map((point, locIdx) => (
               <Marker key={point.id} latitude={point.lat} longitude={point.lng}>
                 <div
@@ -307,6 +341,23 @@ export function MapView({ trips }: MapViewProps) {
               </Marker>
             ))
           )}
+
+          {/* Wishlist markers */}
+          {showWishlist && currentTrip?.days.find((d) => d.dayNumber === 0)?.locations.map((point) => (
+            <Marker key={`wl-${point.id}`} latitude={point.lat} longitude={point.lng} style={{ zIndex: focusedLocationId === point.id ? 100 : undefined }}>
+              <div
+                className={`map-marker map-marker--wishlist${focusedLocationId === point.id ? ' map-marker--wishlist--focused' : ''}`}
+                title={point.name}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setFocusedLocationId(point.id)
+                  mapRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 14, duration: 900 })
+                }}
+              >
+                <Bookmark size={11} color="white" strokeWidth={2.5} />
+              </div>
+            </Marker>
+          ))}
 
           {/* Single-day mode: current day route + markers */}
           {!isOverview && locations.length > 1 && (
@@ -364,6 +415,19 @@ export function MapView({ trips }: MapViewProps) {
             </Marker>
           ))}
 
+          {mealSuggestions.map((s, i) => (
+            <Marker key={`meal-${s.lat}-${s.lng}`} latitude={s.lat} longitude={s.lng} style={{ zIndex: hoveredMealIdx === i ? 1000 : 10 }}>
+              <div
+                className={`map-marker map-marker--meal${hoveredMealIdx === i ? ' map-marker--meal--active' : ''}`}
+                onMouseEnter={() => setHoveredMealIdx(i)}
+                onMouseLeave={() => setHoveredMealIdx(null)}
+              >
+                <UtensilsCrossed size={11} color="white" strokeWidth={2.5} />
+                <span className="map-marker__meal-tooltip">{s.englishName ?? s.name}</span>
+              </div>
+            </Marker>
+          ))}
+
           {pendingPoint && selectedDayId && (
             <Popup
               latitude={pendingPoint.lat}
@@ -375,12 +439,41 @@ export function MapView({ trips }: MapViewProps) {
               <AddPointForm
                 key={`${pendingPoint.lat}-${pendingPoint.lng}`}
                 dayId={selectedDayId}
+                dayNumber={currentDay?.dayNumber}
                 lat={pendingPoint.lat}
                 lng={pendingPoint.lng}
                 suggestions={pendingPoint.suggestions}
                 loading={pendingPoint.loading}
                 stopType={pendingPoint.stopType}
+                tripId={currentTrip?.id}
+                otherDays={currentTrip?.days.filter((d) => d.dayNumber > 0 && d.id !== selectedDayId) ?? []}
                 onClose={() => setPendingPoint(null)}
+              />
+            </Popup>
+          )}
+
+          {pendingWishlistPoint && currentTrip && (
+            <Popup
+              latitude={pendingWishlistPoint.lat}
+              longitude={pendingWishlistPoint.lng}
+              onClose={() => setPendingWishlistPoint(null)}
+              closeOnClick={false}
+              anchor="bottom"
+            >
+              <WishlistAddForm
+                key={`wl-${pendingWishlistPoint.lat}-${pendingWishlistPoint.lng}`}
+                tripId={currentTrip.id}
+                lat={pendingWishlistPoint.lat}
+                lng={pendingWishlistPoint.lng}
+                suggestions={pendingWishlistPoint.suggestions}
+                loading={pendingWishlistPoint.loading}
+                days={currentTrip.days.filter((d) => d.dayNumber > 0)}
+                onSelectDay={(dayId: string) => {
+                  setPendingWishlistPoint(null)
+                  setSelectedDayId(dayId)
+                  setPendingPoint({ lat: pendingWishlistPoint.lat, lng: pendingWishlistPoint.lng, suggestions: pendingWishlistPoint.suggestions, loading: false })
+                }}
+                onClose={() => setPendingWishlistPoint(null)}
               />
             </Popup>
           )}
@@ -447,28 +540,145 @@ function EditLocationForm({ location, onClose }: { location: LocationPoint; onCl
   )
 }
 
+function WishlistAddForm({
+  tripId, lat, lng, suggestions, loading, days, onSelectDay, onClose,
+}: {
+  tripId: string
+  lat: number
+  lng: number
+  suggestions: string[]
+  loading: boolean
+  days: { id: string; dayNumber: number }[]
+  onSelectDay: (dayId: string) => void
+  onClose: () => void
+}) {
+  const router = useRouter()
+  const [name, setName] = useState(suggestions[0] ?? '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [dayDropdownOpen, setDayDropdownOpen] = useState(false)
+
+  useEffect(() => {
+    if (suggestions[0] && !name) setName(suggestions[0])
+  }, [suggestions]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleAddToWishlist() {
+    if (!name.trim()) return
+    setSaving(true)
+    const result = await addToWishlist(tripId, lat, lng, name.trim())
+    if (result.error) { setError(result.error); setSaving(false); return }
+    router.refresh()
+    onClose()
+  }
+
+  return (
+    <div className="add-point-form">
+      {loading ? (
+        <p className="add-point-form__loading">Loading suggestions…</p>
+      ) : suggestions.length > 0 ? (
+        <div className="add-point-form__suggestions">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={`add-point-form__chip${s === name ? ' add-point-form__chip--active' : ''}`}
+              onClick={() => setName(s)}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <input
+        type="text"
+        required
+        placeholder="Location name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="add-point-form__input"
+        autoFocus
+      />
+      {error && <p className="add-point-form__error">{error}</p>}
+      {days.length > 0 && (
+        <div className="wishlist-popup__day-wrap">
+          <button
+            type="button"
+            className="wishlist-popup__day-toggle"
+            onClick={() => setDayDropdownOpen((o) => !o)}
+          >
+            Add to day
+            <span className="wishlist-popup__day-caret">{dayDropdownOpen ? '▴' : '▾'}</span>
+          </button>
+          {dayDropdownOpen && (
+            <div className="wishlist-popup__day-menu">
+              {[...days].sort((a, b) => a.dayNumber - b.dayNumber).map((d) => {
+                const color = DAY_COLORS[dayColorIndex(d.id)]
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    className="wishlist-popup__day-btn"
+                    onClick={() => onSelectDay(d.id)}
+                  >
+                    <span className="wishlist-popup__day-dot" style={{ background: color }} />
+                    Day {d.dayNumber}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="wishlist-popup__divider" />
+      <button
+        type="button"
+        disabled={saving || !name.trim()}
+        className="wishlist-popup__save-btn"
+        onClick={handleAddToWishlist}
+      >
+        <Bookmark size={13} />
+        {saving ? 'Saving…' : 'Save to Wishlist'}
+      </button>
+    </div>
+  )
+}
+
 function AddPointForm({
-  dayId, lat, lng, suggestions, loading, stopType, onClose,
+  dayId, dayNumber, lat, lng, suggestions, loading, stopType, tripId, otherDays, onClose,
 }: {
   dayId: string
+  dayNumber?: number
   lat: number
   lng: number
   suggestions: string[]
   loading: boolean
   stopType?: string
+  tripId?: string
+  otherDays?: { id: string; dayNumber: number }[]
   onClose: () => void
 }) {
-  const [name, setName] = useState(suggestions[0] ?? '')
+  const router = useRouter()
+  const uniqueSuggestions = [...new Set(suggestions)]
+  const [name, setName] = useState(uniqueSuggestions[0] ?? '')
   const [state, formAction, pending] = useActionState(addLocationPoint, initialState)
+  const [dayDropdownOpen, setDayDropdownOpen] = useState(false)
+  const [savingWishlist, setSavingWishlist] = useState(false)
 
-  // When async suggestions arrive after popup is open
   useEffect(() => {
-    if (suggestions[0] && !name) setName(suggestions[0])
+    if (uniqueSuggestions[0] && !name) setName(uniqueSuggestions[0])
   }, [suggestions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (state.success) onClose()
   }, [state.success]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleSaveWishlist() {
+    if (!tripId || !name.trim()) return
+    setSavingWishlist(true)
+    await addToWishlist(tripId, lat, lng, name.trim())
+    router.refresh()
+    onClose()
+  }
 
   return (
     <form className="add-point-form" action={formAction}>
@@ -479,9 +689,9 @@ function AddPointForm({
 
       {loading ? (
         <p className="add-point-form__loading">Loading suggestions…</p>
-      ) : suggestions.length > 0 ? (
+      ) : uniqueSuggestions.length > 0 ? (
         <div className="add-point-form__suggestions">
-          {suggestions.map((s) => (
+          {uniqueSuggestions.map((s) => (
             <button
               key={s}
               type="button"
@@ -506,8 +716,59 @@ function AddPointForm({
       />
       {state.error && <p className="add-point-form__error">{state.error}</p>}
       <button type="submit" disabled={pending} className="add-point-form__submit">
-        {pending ? 'Adding…' : 'Add'}
+        {pending ? 'Adding…' : dayNumber ? `Add to Day ${dayNumber}` : 'Add to day'}
       </button>
+
+      {(otherDays && otherDays.length > 0) && (
+        <div className="wishlist-popup__day-wrap">
+          <button
+            type="button"
+            className="wishlist-popup__day-toggle"
+            onClick={() => setDayDropdownOpen((o) => !o)}
+          >
+            Add to another day
+            <span className="wishlist-popup__day-caret">{dayDropdownOpen ? '▴' : '▾'}</span>
+          </button>
+          {dayDropdownOpen && (
+            <div className="wishlist-popup__day-menu">
+              {[...otherDays].sort((a, b) => a.dayNumber - b.dayNumber).map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  className="wishlist-popup__day-btn"
+                  onClick={() => {
+                    const fd = new FormData()
+                    fd.set('dayId', d.id)
+                    fd.set('lat', String(lat))
+                    fd.set('lng', String(lng))
+                    fd.set('name', name)
+                    fd.set('stopType', stopType ?? 'place')
+                    void addLocationPoint({}, fd).then(() => { router.refresh(); onClose() })
+                  }}
+                >
+                  <span className="wishlist-popup__day-dot" style={{ background: DAY_COLORS[dayColorIndex(d.id)] }} />
+                  Day {d.dayNumber}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tripId && (
+        <>
+          <div className="wishlist-popup__divider" />
+          <button
+            type="button"
+            disabled={savingWishlist || !name.trim()}
+            className="wishlist-popup__save-btn"
+            onClick={handleSaveWishlist}
+          >
+            <Bookmark size={13} />
+            {savingWishlist ? 'Saving…' : 'Save to Wishlist'}
+          </button>
+        </>
+      )}
     </form>
   )
 }

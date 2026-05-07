@@ -24,12 +24,12 @@ import {
   Plane, Clock, CircleCheck, Pencil,
   ChevronDown, ChevronUp, ArrowUpDown, Check, X,
   GripVertical, ArrowLeft, CalendarDays, Share2, MapPin, Navigation,
-  MoreVertical, Trash2, Info, ArrowLeftRight, Tag, UtensilsCrossed, Bed,
+  MoreVertical, Trash2, Info, ArrowLeftRight, Tag, UtensilsCrossed, Bed, Bookmark, Plus,
 } from 'lucide-react'
 import { DayPicker } from 'react-day-picker'
 import type { DateRange, DayButtonProps } from 'react-day-picker'
 import 'react-day-picker/src/style.css'
-import { selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, focusedLocationIdAtom, segmentModesAtom, segmentSummaryAtom, dayRouteGeoJSONAtom, dayRouteTotalAtom } from '@/lib/store'
+import { selectedDayIdAtom, suggestedLocationAtom, focusedLocationAtom, focusedLocationIdAtom, segmentModesAtom, segmentSummaryAtom, dayRouteGeoJSONAtom, dayRouteTotalAtom, mealSuggestionsAtom, hoveredMealIdxAtom, showDaysAtom, showWishlistAtom } from '@/lib/store'
 import { addDay } from '@/app/actions/addDay'
 import { deleteLocation } from '@/app/actions/deleteLocation'
 import { deleteDay } from '@/app/actions/deleteDay'
@@ -45,6 +45,8 @@ import { updateDaySummary } from '@/app/actions/updateDaySummary'
 import { markAllLocationsVisited } from '@/app/actions/markAllLocationsVisited'
 import { updateTripStyle } from '@/app/actions/updateTripStyle'
 import { updateLocationStopType } from '@/app/actions/updateLocationStopType'
+import { addToWishlist } from '@/app/actions/addToWishlist'
+import { moveToDay } from '@/app/actions/moveToDay'
 import { haversineDistance, formatDistance, dayColorIndex } from '@/lib/utils'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import type { TripWithDaysAndLocations, DayWithLocations, ActionState, SuggestedLocation, LocationPoint, TransportMode, RouteGeoJSON } from '@/types'
@@ -270,6 +272,8 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   const segmentModes = useAtomValue(segmentModesAtom)
   const setSuggestedLocation = useSetAtom(suggestedLocationAtom)
   const setFocusedLocation = useSetAtom(focusedLocationAtom)
+  const setMealSuggestions = useSetAtom(mealSuggestionsAtom)
+  const setHoveredMealIdx = useSetAtom(hoveredMealIdxAtom)
   const [suggestions, setSuggestions] = useState<SuggestedLocation[]>([])
   const [suggestingForDayId, setSuggestingForDayId] = useState<string | null>(null)
   const [suggestMode, setSuggestMode] = useState<'place' | 'meal'>('place')
@@ -339,12 +343,21 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
   }, [showDaysCalendar])
 
 
+  const wishlistDay = trip.days.find((d) => d.dayNumber === 0) ?? null
+  const [showDays, setShowDays] = useAtom(showDaysAtom)
+  const [showWishlist, setShowWishlist] = useAtom(showWishlistAtom)
+
   useEffect(() => {
-    const sorted = sortDaysByDate([...trip.days])
+    const regular = trip.days.filter((d) => d.dayNumber !== 0)
+    const sorted = sortDaysByDate([...regular])
     setDayItems(sorted)
     const needsReorder = sorted.some((d, i) => d.dayNumber !== i + 1)
     if (needsReorder) void reorderDays(sorted.map((d, i) => ({ id: d.id, dayNumber: i + 1 })))
   }, [trip.days])
+
+  useEffect(() => {
+    setMealSuggestions(suggestMode === 'meal' ? suggestions : [])
+  }, [suggestions, suggestMode, setMealSuggestions])
 
   async function handleDayDateSelect(dayId: string, date: Date | undefined): Promise<void> {
     const newDate = date ?? null
@@ -452,6 +465,8 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
     setSuggestions([])
     setSuggestingForDayId(null)
     setReorderMode(false)
+    setShowDays(true)
+    setShowWishlist(false)
   }
 
   function handleDaysCalendarSelect(date: Date | undefined): void {
@@ -647,7 +662,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
 
   return (
     <div className="trip-detail">
-      <button className="trip-detail__back" onClick={onBack}>
+      <button className="trip-detail__back" onClick={() => { setShowDays(true); setShowWishlist(false); onBack() }}>
         <ArrowLeft size={14} /> Back
       </button>
 
@@ -725,10 +740,25 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
 
       </div>
 
-      <div className="trip-detail__days">
+      <div className="trip-detail__days" onClick={() => setFocusedLocationId(null)}>
         <div className="trip-detail__days-header">
           <div className="trip-detail__days-heading-row">
-            <h3 className="trip-detail__days-heading">Days</h3>
+            <div className="trip-detail__view-tabs">
+              <button
+                className={`trip-detail__view-tab${showDays ? ' trip-detail__view-tab--active' : ''}`}
+                onClick={() => { if (!showDays || showWishlist) { setShowDays((v) => !v) } }}
+              >Days</button>
+              <button
+                className={`trip-detail__view-tab${showWishlist ? ' trip-detail__view-tab--active' : ''}`}
+                onClick={() => { if (!showWishlist || showDays) { setShowWishlist((v) => !v) } }}
+              >
+                <Bookmark size={12} />
+                Wishlist
+                {wishlistDay && wishlistDay.locations.length > 0 && (
+                  <span className="trip-detail__view-tab-count">{wishlistDay.locations.length}</span>
+                )}
+              </button>
+            </div>
             {datedDaysMap.size > 0 && (
               <div className="trip-detail__days-cal-wrap" onClick={(e) => e.stopPropagation()}>
                 <button
@@ -770,7 +800,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
             </button>
           ) : null}
         </div>
-        {dayItems.length === 0 ? (
+        {showDays && (dayItems.length === 0 ? (
           <div className="trip-detail__empty">
             <p>No days yet.</p>
             <p className="trip-detail__empty-hint">Add your first day below, then click the map to drop location pins.</p>
@@ -970,6 +1000,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                               <SortableLocationList
                                 locs={placeLocs}
                                 city={trip.destination}
+                                tripId={trip.id}
                                 deletingLocationId={deletingLocationId}
                                 reorderMode={reorderMode}
                                 tripStyles={tripStyles}
@@ -1033,12 +1064,15 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
                         </div>
                         {suggestingForDayId === day.id && suggestions.length > 0 && (
                           <ul className="suggest-list">
-                            {suggestions.map((s) => {
+                            {suggestions.map((s, sIdx) => {
                               const matchingStyles = tripStyles.filter((style) =>
                                 (STYLE_CATEGORIES[style] ?? []).includes(s.category)
                               )
                               return (
-                                <li key={`${s.lat}-${s.lng}`} className="suggest-list__item">
+                                <li key={`${s.lat}-${s.lng}`} className="suggest-list__item"
+                                  onMouseEnter={() => suggestMode === 'meal' ? setHoveredMealIdx(sIdx) : undefined}
+                                  onMouseLeave={() => suggestMode === 'meal' ? setHoveredMealIdx(null) : undefined}
+                                >
                                   <button
                                     className="suggest-list__btn"
                                     onClick={() => handleSuggestionClick(s)}
@@ -1071,6 +1105,29 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
               )
             })}
           </ul>
+        ))}
+        {showWishlist && (
+          <div className="wishlist-view">
+            {!wishlistDay || wishlistDay.locations.length === 0 ? (
+              <div className="trip-detail__empty">
+                <Bookmark size={28} strokeWidth={1.5} />
+                <p>No saved places yet.</p>
+                <p className="trip-detail__empty-hint">Click on the map or tap the bookmark icon on any location to save it here.</p>
+              </div>
+            ) : (
+              <ul className="wishlist-view__list">
+                {[...wishlistDay.locations].sort((a, b) => a.orderIndex - b.orderIndex).map((loc) => (
+                  <WishlistLocationItem
+                    key={loc.id}
+                    loc={loc}
+                    city={trip.destination}
+                    days={dayItems}
+                    onDelete={() => handleDeleteLocation(loc.id, loc.name)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </div>
 
@@ -1090,6 +1147,7 @@ export function TripDetail({ trip, onBack }: TripDetailProps) {
           {pending ? 'Adding…' : '+ Add Day'}
         </button>
       </form>
+
 
       {toast && (
         <div className="trip-toast" role="status">
@@ -1427,6 +1485,111 @@ function SegmentRoutePanel({ from, to }: { from: LocationPoint; to: LocationPoin
   )
 }
 
+function WishlistLocationItem({ loc, city, days, onDelete }: {
+  loc: LocationPoint
+  city: string
+  days: DayWithLocations[]
+  onDelete: () => void
+}) {
+  const router = useRouter()
+  const setShowDays = useSetAtom(showDaysAtom)
+  const setShowWishlist = useSetAtom(showWishlistAtom)
+  const [selectedDayId, setSelectedDayId] = useAtom(selectedDayIdAtom)
+  const [focusedLocationId, setFocusedLocationId] = useAtom(focusedLocationIdAtom)
+  const setFocusedLocation = useSetAtom(focusedLocationAtom)
+  const [infoOpen, setInfoOpen] = useState(false)
+  const [dayMenuOpen, setDayMenuOpen] = useState(false)
+  const [moving, setMoving] = useState(false)
+  const isFocused = focusedLocationId === loc.id
+  const itemRef = useRef<HTMLLIElement | null>(null)
+
+  useEffect(() => {
+    if (isFocused) itemRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [isFocused])
+
+  function handleSelect() {
+    setFocusedLocationId(loc.id)
+    setFocusedLocation({ lat: loc.lat, lng: loc.lng })
+  }
+
+  async function handleMoveToDay(dayId: string) {
+    setMoving(true)
+    setDayMenuOpen(false)
+    await moveToDay(loc.id, dayId)
+    setShowDays(true)
+    setShowWishlist(false)
+    setSelectedDayId(dayId)
+    router.refresh()
+  }
+
+  return (
+    <li ref={itemRef} className="location-list__item" onClick={(e) => e.stopPropagation()}>
+      <div className="location-list__row">
+        <div
+          className={`location-list__num location-list__num--wishlist${isFocused ? ' location-list__num--wishlist--focused' : ''}`}
+          onClick={handleSelect}
+          role="button"
+          tabIndex={0}
+        >
+          <Bookmark size={9} />
+        </div>
+        <div className="location-list__name-block">
+          <div className="location-list__name-row">
+            <button className="location-list__name" onClick={handleSelect}>{loc.name}</button>
+            <EnglishNameBadge name={loc.name} city={city} />
+            <button
+              className={`location-list__info-circle${infoOpen ? ' location-list__info-circle--open' : ''}`}
+              title="Place info"
+              onClick={() => setInfoOpen((o) => !o)}
+            >
+              <Info size={11} />
+            </button>
+          </div>
+        </div>
+        {days.length > 0 && (
+          <div className="wishlist-view__move-wrap">
+            <button
+              className="location-list__visited"
+              title="Add to day"
+              disabled={moving}
+              onClick={() => setDayMenuOpen((o) => !o)}
+            >
+              {moving ? '…' : <Plus size={13} />}
+            </button>
+            {dayMenuOpen && (
+              <div className="wishlist-view__day-menu">
+                {[...days].sort((a, b) => a.dayNumber - b.dayNumber).map((d) => {
+                  const color = DAY_COLORS[dayColorIndex(d.id)]
+                  return (
+                    <button
+                      key={d.id}
+                      className="wishlist-view__day-opt"
+                      onClick={() => void handleMoveToDay(d.id)}
+                    >
+                      <span className="wishlist-view__day-dot" style={{ background: color }} />
+                      Day {d.dayNumber}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+        <button
+          className="location-list__delete"
+          title="Remove"
+          onClick={onDelete}
+        >
+          <X size={13} />
+        </button>
+      </div>
+      {infoOpen && (
+        <LocationInfoPanel name={loc.name} city={city} lat={loc.lat} lng={loc.lng} />
+      )}
+    </li>
+  )
+}
+
 function DayRoute({ locs }: { locs: LocationPoint[] }) {
   const [segmentModes, setSegmentModes] = useAtom(segmentModesAtom)
   const setDayRouteGeoJSON = useSetAtom(dayRouteGeoJSONAtom)
@@ -1524,6 +1687,7 @@ function DayRoute({ locs }: { locs: LocationPoint[] }) {
 interface SortableLocationListProps {
   locs: LocationPoint[]
   city: string
+  tripId: string
   deletingLocationId: string | null
   reorderMode: boolean
   tripStyles: string[]
@@ -1531,7 +1695,7 @@ interface SortableLocationListProps {
   onDelete: (loc: LocationPoint) => void
 }
 
-function SortableLocationList({ locs, city, deletingLocationId, reorderMode, tripStyles, onFocus, onDelete }: SortableLocationListProps) {
+function SortableLocationList({ locs, city, tripId, deletingLocationId, reorderMode, tripStyles, onFocus, onDelete }: SortableLocationListProps) {
   const router = useRouter()
   const [items, setItems] = useState<LocationPoint[]>(locs)
   const [reorderError, setReorderError] = useState<string | null>(null)
@@ -1580,6 +1744,7 @@ function SortableLocationList({ locs, city, deletingLocationId, reorderMode, tri
                 key={loc.id}
                 loc={loc}
                 city={city}
+                tripId={tripId}
                 index={i + 1}
                 prevLoc={i > 0 ? items[i - 1] : null}
                 distFromPrev={i > 0 ? segDists[i - 1] : null}
@@ -1620,6 +1785,7 @@ const placeInfoCache = new Map<string, PlaceInfo>()
 interface SortableLocationItemProps {
   loc: LocationPoint
   city: string
+  tripId: string
   index: number
   prevLoc: LocationPoint | null
   distFromPrev: number | null
@@ -1641,7 +1807,7 @@ function matchingTripStyles(type: string | null, styles: string[]): string[] {
   )
 }
 
-function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDeleting, reorderMode, tripStyles, onFocus, onDelete }: SortableLocationItemProps) {
+function SortableLocationItem({ loc, city, tripId, index, prevLoc, distFromPrev, isDeleting, reorderMode, tripStyles, onFocus, onDelete }: SortableLocationItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: loc.id })
   const router = useRouter()
   const [notesOpen, setNotesOpen] = useState(false)
@@ -1651,6 +1817,12 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
   const [visited, setVisited] = useState(loc.visited)
   useEffect(() => { setVisited(loc.visited) }, [loc.visited])
   const [stopType, setStopType] = useState(loc.stopType ?? 'place')
+  const [bookmarked, setBookmarked] = useState(false)
+
+  async function handleSaveToWishlist() {
+    setBookmarked(true)
+    await addToWishlist(tripId, loc.lat, loc.lng, loc.name)
+  }
 
   async function handleCycleStopType() {
     const next = stopType === 'place' ? 'meal' : stopType === 'meal' ? 'accommodation' : 'place'
@@ -1697,7 +1869,7 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
   }
 
   return (
-    <li ref={(el) => { setNodeRef(el); itemRef.current = el }} style={style} className={`location-list__item${stopType === 'meal' ? ' location-list__item--meal' : ''}`}>
+    <li ref={(el) => { setNodeRef(el); itemRef.current = el }} style={style} className={`location-list__item${stopType === 'meal' ? ' location-list__item--meal' : ''}`} onClick={(e) => e.stopPropagation()}>
       <div className="location-list__row">
         {reorderMode ? (
           <span className="location-list__drag-handle" {...attributes} {...listeners} title="Drag to reorder">
@@ -1740,6 +1912,13 @@ function SortableLocationItem({ loc, city, index, prevLoc, distFromPrev, isDelet
             {stopType === 'accommodation' ? <Bed size={13} /> : <UtensilsCrossed size={13} />}
           </button>
         )}
+        <button
+          className={`location-list__bookmark${bookmarked ? ' location-list__bookmark--saved' : ''}`}
+          onClick={() => void handleSaveToWishlist()}
+          title={bookmarked ? 'Saved to Wishlist' : 'Save to Wishlist'}
+        >
+          <Bookmark size={13} />
+        </button>
         <button
           className={`location-list__visited${visited ? ' location-list__visited--done' : ''}`}
           onClick={() => void handleToggleVisited()}

@@ -25,7 +25,9 @@
   --color-gray-300: #d1d5db;
   --color-gray-400: #9ca3af;
   --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
   --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
   --color-gray-900: #111827;
 
   /* Success / green */
@@ -65,6 +67,12 @@
   --color-day-7: #9333ea;
   --color-day-8: #0891b2;
   --color-day-9: #b45309;
+
+  /* Meal / food */
+  --color-meal: #f97316;
+  --color-meal-light: #fff7ed;
+  --color-meal-border: #fed7aa;
+  --color-meal-text: #7c2d12;
 
   /* Overlays */
   --color-overlay: rgba(0, 0, 0, 0.45);

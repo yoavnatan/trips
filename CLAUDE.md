@@ -111,6 +111,10 @@ dayRouteGeoJSONAtom   // RouteGeoJSON | null — combined GeoJSON for all day se
 segmentModesAtom      // Record<string, TransportMode> — mode per segment key "${fromId}-${toId}"
 segmentSummaryAtom    // Record<string, {distance, duration}> — actual route info per segment (written by DayRoute, read by location list)
 dayRouteTotalAtom     // string | null — formatted total distance for open day (e.g. "4.2 km"); written by DayRoute, read by day header
+mealSuggestionsAtom   // SuggestedLocation[] — current meal suggestions shown as orange markers on map
+hoveredMealIdxAtom    // number | null — index of hovered meal suggestion; drives z-index + tooltip on map marker
+showDaysAtom          // boolean (default true) — whether the Days section is visible in sidebar + map
+showWishlistAtom      // boolean (default false) — whether the Wishlist section is visible in sidebar + map
 ```
 
 ## Key Patterns
@@ -312,6 +316,38 @@ Shows "Day X selected — click the map to add a location" when a day is open
 - All visited location names across every day are excluded from suggestions (`allVisited`)
 - CSS: `.trip-detail__style-wrap`, `.trip-detail__style-dropdown`, `.trip-detail__style-option`, `.trip-detail__style-option--active`, `.trip-detail__date-btn--set`
 
+### Wishlist (TripDetail.tsx + MapView.tsx)
+- Wishlist = a special Day with `dayNumber: 0` per trip; no DB migration needed
+- `app/actions/addToWishlist.ts` — finds or creates `dayNumber: 0` Day, then adds LocationPoint
+- `app/actions/moveToDay.ts` — moves a LocationPoint to a different day (updates `dayId` + `orderIndex`)
+- Sidebar has two independent tab toggles: **Days** (`showDaysAtom`) and **Wishlist** (`showWishlistAtom`); both can be active simultaneously
+  - When Days only: shows days list, map shows overview day markers
+  - When Wishlist only: shows wishlist section, map shows only wishlist markers
+  - When both: shows days list + wishlist section below (separated by border-top), map shows both
+  - Clicking a tab toggles it; at least one must stay on (toggle is guarded)
+- `WishlistLocationItem` — looks identical to a regular location item; shows: square gray bookmark badge (`.location-list__num--wishlist`), name (clickable), English name badge, `ⓘ` info button (inside name row, 18px), `+` button → day dropdown, delete button
+  - Clicking name or badge → sets `focusedLocationIdAtom` + `focusedLocationAtom` (flies map); badge turns blue (`--color-primary`) when focused (`.location-list__num--wishlist--focused`)
+  - `itemRef` + `useEffect` auto-scrolls the item into view when focused
+  - Moving to a day: `moveToDay` server action, then `setShowDays(true)`, `setShowWishlist(false)`, `setSelectedDayId(targetDayId)`
+- Wishlist markers on map: square gray (`map-marker--wishlist`, `border-radius: 5px`, bookmark icon); turns blue + scales up when `focusedLocationId` matches (`map-marker--wishlist--focused`)
+- ⚠️ `overviewDays` in MapView filters `dayNumber > 0` so wishlist locations never appear as numbered markers
+- ⚠️ `currentDay` in MapView guards `dayNumber > 0` so `selectedDayId` can never accidentally resolve to the wishlist day
+- ⚠️ `isOverview = (!selectedDayId || !currentDay) && !!currentTrip` — if selectedDayId somehow points to the wishlist day, isOverview stays true
+- Map click with trip open but no day selected → `pendingWishlistPoint` popup (`WishlistAddForm`): name chips, "Add to day" toggle→dropdown (inline, not absolute), "Save to Wishlist" dashed button
+- Map click with day selected → `AddPointForm` extended with: main submit "Add to Day N", "Add to another day" toggle→dropdown (inline), "Save to Wishlist" dashed button
+- Bookmark icon on each `SortableLocationItem` (`.location-list__bookmark`): gray by default, blue when `bookmarked` state is true (set after saving)
+- Clicking any empty area in `.trip-detail__days` container clears `focusedLocationIdAtom`; each `location-list__item` li stops propagation so clicking a location doesn't immediately deselect
+- Clicking empty map area also clears `focusedLocationIdAtom` (first line of `handleMapClick`)
+- CSS: `.location-list__num--wishlist`, `.location-list__num--wishlist--focused`, `.location-list__bookmark`, `.location-list__bookmark--saved`, `.wishlist-view`, `.wishlist-view__list`, `.wishlist-view__item`, `.wishlist-view__move-wrap`, `.wishlist-view__day-menu`, `.wishlist-view__day-opt`, `.wishlist-view__day-dot`, `.trip-detail__view-tabs`, `.trip-detail__view-tab`, `.trip-detail__view-tab--active`, `.trip-detail__view-tab-count`
+- Map popup dropdowns use inline (non-absolute) layout so the Mapbox popup expands to fit them (avoids clipping). Sidebar wishlist day menu stays `position: absolute` with `max-height: 180px; overflow-y: auto`
+
+### Meal suggestions on map (TripDetail.tsx + MapView.tsx)
+- "Suggest meal" button in each day body fetches nearby restaurants/cafes via `/api/mapbox/suggest` with `MEAL_CATEGORIES`
+- Results written to `mealSuggestionsAtom`; MapView renders them as orange circle markers (`map-marker--meal`, `UtensilsCrossed` icon)
+- Hovering a meal item in the sidebar list sets `hoveredMealIdxAtom` → the corresponding map marker gets `zIndex: 1000` + `.map-marker--meal--active` class which shows the name tooltip above the marker
+- Tooltip (`.map-marker__meal-tooltip`): beige-orange bg, positioned above marker, z-index 999; shown on `:hover` or `--active`
+- Results cached in `mealCacheRef` (useRef Map keyed by dayId); persists across close/reopen; already-added meals removed from cache
+
 ### Mark all done / Unmark all (TripDetail.tsx)
 - In the ⋮ menu: "Mark all done" when not all locations are visited; "Unmark all" when all are visited
 - `handleMarkAllVisited(dayId, visited)` — optimistic update to `dayItems` locations, calls `markAllLocationsVisited(dayId, visited)` server action
@@ -324,7 +360,8 @@ Shows "Day X selected — click the map to add a location" when a day is open
                     deleteLocation, clearDayLocations, reorderLocations, reorderDays,
                     updateLocation, updateTrip, updateTripStyle, updateDayDate, swapDayDates,
                     toggleLocationVisited, markAllLocationsVisited, updateDaySummary,
-                    updateLocationStopType, registerUser, signOutAction
+                    updateLocationStopType, addToWishlist, moveToDay,
+                    registerUser, signOutAction
   /api/auth       - NextAuth route
   /api/mapbox/geocode   - Server proxy: Mapbox forward geocoding
   /api/mapbox/reverse   - Server proxy: Mapbox reverse geocoding
@@ -393,6 +430,10 @@ Shows "Day X selected — click the map to add a location" when a day is open
 40. Meal/accommodation stop types — `stopType` field on LocationPoint cycles place→meal→accommodation; meal shown inline (amber), accommodation shown as "Staying at" card at day bottom; "Suggest meal" button with persistent cache
 41. Stable day colors — color index hashed from `day.id` so color follows the day when reordering (not position-based); `dayColorIndex()` in `lib/utils.ts`
 42. Server-side API proxies — all Mapbox + Overpass calls go through `/api/mapbox/*` and `/api/overpass/stop` so tokens are never in client bundle; Overpass route has 1h cache + client-side in-flight dedup
+43. Wishlist — save any location to a wishlist (Day with `dayNumber: 0`); sidebar tab toggles (Days / Wishlist) are independent; wishlist items look identical to regular location items; bookmark icon on each location saves it; map shows square gray bookmark markers; clicking a wishlist item/marker focuses it (blue highlight + map fly-to); "Add to day" moves it out of wishlist; `addToWishlist` + `moveToDay` server actions
+44. Meal suggestions on map — "Suggest meal" button populates `mealSuggestionsAtom`; MapView renders orange circle markers with `UtensilsCrossed` icon; hovering a meal in the list highlights its map marker and shows a name tooltip (via shared `hoveredMealIdxAtom`)
+45. Wishlist / day picker dropdowns in map popups — rendered inline (not absolutely positioned) so the Mapbox popup expands to fit; sidebar dropdown stays absolute with `max-height + overflow-y: auto` for scrolling
+46. Deselect on empty click — clicking any empty area in the sidebar list container OR on the map clears `focusedLocationIdAtom`; location `<li>` elements stop propagation to avoid self-clearing
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)
