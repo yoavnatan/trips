@@ -6,51 +6,44 @@ don't waste all the tokens in once, work smart!
 
 now:
 
+1. **הפרדה ויזואלית בין לוקיישנים** — divider עדין בין פריטים ברשימה
 
-1. צריך להוסיף נקודות עצירה של אוכל ולינה, האוכל יכול להיות ברשימה והלינה בסוף היום. זה צריך להיות מעט מעוצב ויפה. עם אייקונים נכונים ומיקום נכון מבחינת חוויית משתמש.
+2. **Wishlist** — לוקיישנים ללא יום. כשלוחצים על המפה בלי יום פתוח: אפשרות להוסיף ליום מסוים מהרשימה, או להוסיף לwishlist.
 
-2. צריך לעשות למטה סטוק של מיקומים שאין להם יום עדיין, כמו wishlist. כשלוחצים סתם על המפה בלי יום פתוח צריכה להיות אפשרות : להוסיף ליום מסוים מהרשימה, או להוסיף לwishlist.
+3. **שיפור suggest meal** — להציג סימוני אוכל על המפה כשמציגים הצעות, כדי שהמשתמש יראה איפה ההצעות ממוקמות.
 
-3. צריך לשפר את ההפרדה בין הימים כי מבחינת ui זה נראה קצת מחובר כשפותחים יום אחד לא ברור איפה הוא נגמר
+next:
 
-next: 
-
--צריך הפרדה נכונה יותר בין לוקיישנים 
-
-- מרגיש לי שצריך איזו הפרדה בין לוקיישן ללוקיישן מבחינת ui משהו עדין.
-
-- ארגון כל הלוקיישנים ביום לפי שעות
-
-- בסיכום של כל יום צריך להיות מחושב כמה שעות פחות או יותר שהייה לכל אתר, בתוספת המסלול שבין כל אחד מהם.
-
-- ui יותר מעוגל, פינות מעוגלות, להוסיף אנימציות של פתיחה ושל החלפה בין מסכים וקומפוננטות.
-
+- ארגון כל הלוקיישנים ביום לפי שעות (הוספת שעת ביקור, מיון לפי שעה)
+- בסיכום יום: כמה שעות שהייה לכל אתר + מסלול בין כל אחד
+- ui יותר מעוגל, פינות מעוגלות, אנימציות פתיחה/החלפה בין קומפוננטות
+- hover UI על דברים
+- Loader למפה
+- Google OAuth consent screen — לפתוח לכולם
 
 
 ## Claude notes
 
-### סטטוס — הכל עובד בפרודקשן
+### סטטוס — עובד בפרודקשן
 https://trips-8sq6.vercel.app
+כל env vars מוגדרים ב-Vercel (כולל DATABASE_URL, MAPBOX_TOKEN, GROQ_API_KEY, GOOGLE_PLACES_API_KEY).
+Google OAuth עובד. אין הערות פתוחות.
 
-### ⚠️ Vercel — להוסיף env var לפני push הבא
-`MAPBOX_TOKEN` = אותו ערך כמו `NEXT_PUBLIC_MAPBOX_TOKEN` — ב-Vercel dashboard → Settings → Environment Variables
+### DB — כל מיגרציות הורצו
+stopType, visited, date, tripStyle — הכל קיים ב-Neon. לא נדרשת מיגרציה לסשן הבא.
 
-### ⚠️ DB Migration נדרש לפני שימוש
-הרצה ב-Neon SQL Editor:
-```sql
-ALTER TABLE "LocationPoint" ADD COLUMN IF NOT EXISTS "stopType" TEXT NOT NULL DEFAULT 'place';
-```
-אחרי ה-SQL: `npx prisma generate` כבר בוצע. צריך רסטארט dev server.
-
-### מה נעשה בסשן הזה
-1. **עצירות אוכל / לינה** — כפתור UtensilsCrossed על כל לוקיישן; קליק מחזר: place → meal → accommodation → place; מיל קיבל רקע + border; accommodation מסופר מהרשימה ומוצג כ"Staying at" card בסוף היום עם כפתור reset
-2. **הפרדה ויזואלית בין ימים** — box-shadow + z-index + margin-bottom על `.day-list__item--active`
-3. **DB**: `stopType String @default("place")` ב-Prisma schema; server action `updateLocationStopType`
+### מה נעשה בסשן האחרון
+1. **stopType על LocationPoint** — place/meal/accommodation; meal inline עם amber border; accommodation כ-"Staying at" card בסוף היום; updateLocationStopType server action
+2. **Suggest meal** — כפתור בגוף היום; mealCacheRef (useRef Map) — תוצאות שורדות סגירה/פתיחה מחדש
+3. **צבעי ימים יציבים** — dayColorIndex(id) ב-lib/utils.ts (hash של ID, לא position); TripDetail + MapView משתמשים באותה פונקציה
+4. **Server-side API proxies** — /api/mapbox/geocode|reverse|suggest|directions + /api/overpass/stop; token לא יוצא ב-client bundle
+5. **Overpass 429 fix** — server cache 1h + client transitStopInFlight dedup (מונע React StrictMode כפול)
+6. **Bug fixes** — Starting from input width; dashed border על suggest btn; difficulty badge עם location אחד
+7. **Vercel auth** — Google OAuth עובד; כל env vars מוגדרים
 
 ### להמשך (לפי עדיפות)
-1. **Wishlist** — לוקיישנים ללא יום (צריך טבלה חדשה / שדה `dayId nullable`)
-2. **הפרדה ויזואלית בין לוקיישנים** — divider עדין בין פריטים ברשימה
-3. **ארגון לפי שעות** — הוספת שעת ביקור לכל לוקיישן, מיון לפי שעה
-4. **AI summaries** — "Generate day summary" עם Claude API
-5. **Google OAuth** — לפתוח לכולם (OAuth consent screen)
-6. לדאוג לסקיילביליות
+1. הפרדה ויזואלית בין לוקיישנים (divider עדין)
+2. Wishlist
+3. Suggest meal markers על מפה
+4. שעות לוקיישן + מיון
+5. UI עיגולים + אנימציות

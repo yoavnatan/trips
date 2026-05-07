@@ -25,10 +25,13 @@ Users can create trips, divide them into days, and mark location points on a map
 - NextAuth.js v5 (email/password + Google OAuth)
 
 ## Environment Variables (.env.local)
-- `NEXT_PUBLIC_MAPBOX_TOKEN` — Mapbox public token
+- `NEXT_PUBLIC_MAPBOX_TOKEN` — Mapbox public token (used only for map tile rendering in browser)
+- `MAPBOX_TOKEN` — same value; used server-side by proxy routes `/api/mapbox/*`
 - `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_URL`, `AUTH_TRUST_HOST` — NextAuth
 - `GROQ_API_KEY` — Groq API (free tier, `llama-3.1-8b-instant`); used by `/api/place-info` and `/api/place-name`
 - `GOOGLE_PLACES_API_KEY` — Google Places API v1; used by `/api/place-info`
+
+All 5 of the above are also set in Vercel Environment Variables (confirmed working).
 
 ## Production
 - Vercel: https://trips-8sq6.vercel.app
@@ -85,17 +88,15 @@ model LocationPoint {
   name       String
   notes      String?
   visited    Boolean @default(false)
+  stopType   String  @default("place")
 }
 ```
 
-**Live DB columns on Trip (verified):** id, userId, title, destination, createdAt, updatedAt, shareToken, startDate, endDate
-⚠️ `tripStyle` column requires manual SQL migration: `ALTER TABLE "Trip" ADD COLUMN IF NOT EXISTS "tripStyle" TEXT[] DEFAULT '{}';`
+**Live DB columns on Trip (verified):** id, userId, title, destination, createdAt, updatedAt, shareToken, startDate, endDate, tripStyle
 
-**Live DB columns on Day:** id, tripId, dayNumber, date, summary
-⚠️ `date` column requires manual SQL migration: `ALTER TABLE "Day" ADD COLUMN IF NOT EXISTS "date" TIMESTAMP(3);`
+**Live DB columns on Day (verified):** id, tripId, dayNumber, date, summary
 
-**Live DB columns on LocationPoint:** id, dayId, lat, lng, orderIndex, name, notes, visited
-⚠️ `visited` column requires manual SQL migration: `ALTER TABLE "LocationPoint" ADD COLUMN "visited" BOOLEAN NOT NULL DEFAULT false;`
+**Live DB columns on LocationPoint (verified):** id, dayId, lat, lng, orderIndex, name, notes, visited, stopType
 
 ## Jotai Store — lib/store.ts
 ```ts
@@ -213,6 +214,23 @@ Shows "Day X selected — click the map to add a location" when a day is open
 - Segment key: `${prevLoc.id}-${loc.id}` (from previous location to this one)
 - `DayRoute` component runs silently: fetches all segment data, writes to `segmentSummaryAtom` + `dayRouteGeoJSONAtom` + `dayRouteTotalAtom`, renders only the total distance/time line
 
+### Meal / accommodation stop types (TripDetail.tsx)
+- Each `LocationPoint` has a `stopType: 'place' | 'meal' | 'accommodation'` (DB default: `'place'`)
+- `UtensilsCrossed` / `Bed` icon button on each location cycles: place → meal → accommodation → place; calls `updateLocationStopType` server action
+- **Meal** locations: rendered inline in the day location list with `.location-list__item--meal` (amber border-left + warning-light background)
+- **Accommodation** locations: filtered OUT of the main list and shown as a separate "Staying at" card (`day-accommodation`) at the bottom of the day body
+- `addLocationPoint` server action accepts `stopType` field; MapView's `AddPointForm` has a hidden `stopType` input (defaults to `'place'`)
+- "Suggest meal" button (`.day-list__suggest-btn--meal`) in each day body — calls `/api/mapbox/suggest` with `MEAL_CATEGORIES`; results cached in `mealCacheRef` (useRef Map, persists across close/reopen); already-added meals removed from cache
+- CSS: `.location-list__stop-type`, `.location-list__stop-type--meal`, `.location-list__stop-type--accommodation`, `.location-list__item--meal`, `.day-accommodation`, `.day-accommodation__icon/content/label/name/reset`, `.day-list__suggest-row`, `.day-list__suggest-btn--meal`, `.suggest-list__meal-icon`
+
+### Server-side Mapbox + Overpass proxy routes
+- **ALL** Mapbox API calls are now server-side — `NEXT_PUBLIC_MAPBOX_TOKEN` is NOT sent in client JS bundles (except for map tile rendering itself)
+- `/api/mapbox/geocode` — forward geocoding (replaces direct Mapbox geocode calls in TripForm, TripDetail, MapView)
+- `/api/mapbox/reverse` — reverse geocoding (replaces direct calls in MapView)
+- `/api/mapbox/suggest` — category search / POI suggestions (replaces direct calls in TripDetail)
+- `/api/mapbox/directions` — route geometry (replaces direct calls in TripDetail)
+- `/api/overpass/stop` — nearest transit stop lookup; module-level Map cache (TTL 1h, key = `lat.toFixed(3),lng.toFixed(3)`); client also deduplicates in-flight requests via `transitStopInFlight` Map to avoid React StrictMode double-invoke causing Overpass 429 errors
+
 ### Multi-modal per-segment routing (TripDetail.tsx)
 - Smart default via `suggestMode(distKm)`: <1.5km→walk, 1.5-25km→transit, >25km→drive
 - User choices stored in `segmentModesAtom` (key=`${fromId}-${toId}`); never overwritten once set
@@ -264,7 +282,8 @@ Shows "Day X selected — click the map to add a location" when a day is open
 
 ### Day color dot (TripDetail.tsx)
 - Each day header shows an 8px circle (`day-list__color-dot`) inline after "Day N", colored via `--day-color` CSS variable
-- Color comes from `--color-day-N` where N = `dayIdx % 10`, matching the map overview palette
+- Color index = `dayColorIndex(day.id)` (stable hash of ID mod 10) — color follows the day when reordering, not the position
+- `dayColorIndex` is in `lib/utils.ts`; same function used in `MapView.tsx` for map markers
 - Class `day-list__item--color-N` (N = 0–9) on the `<li>` sets `--day-color`; the dot reads it via `background-color: var(--day-color)`
 - CSS: `.day-list__color-dot`, `.day-list__item--color-0` … `.day-list__item--color-9`
 
@@ -305,8 +324,13 @@ Shows "Day X selected — click the map to add a location" when a day is open
                     deleteLocation, clearDayLocations, reorderLocations, reorderDays,
                     updateLocation, updateTrip, updateTripStyle, updateDayDate, swapDayDates,
                     toggleLocationVisited, markAllLocationsVisited, updateDaySummary,
-                    registerUser, signOutAction
+                    updateLocationStopType, registerUser, signOutAction
   /api/auth       - NextAuth route
+  /api/mapbox/geocode   - Server proxy: Mapbox forward geocoding
+  /api/mapbox/reverse   - Server proxy: Mapbox reverse geocoding
+  /api/mapbox/suggest   - Server proxy: Mapbox category POI search
+  /api/mapbox/directions - Server proxy: Mapbox directions / route geometry
+  /api/overpass/stop    - Server proxy: nearest transit stop (Overpass API, 1h cache)
   /api/place-info - Server route: Google Places + Groq AI info for a location (hours, rating, summary, tip)
   /api/place-name - Server route: Groq returns `{ name, type }` JSON — standard English name + place type (Museum, Restaurant, etc.)
   /share/[token]  - Public read-only shared trip page
@@ -366,6 +390,9 @@ Shows "Day X selected — click the map to add a location" when a day is open
 37. Day color dot — small 8px circle after "Day N" in each day header, colored to match that day's map color (`--color-day-N`); `day-list__item--color-N` class drives `--day-color` variable; border-left stays primary blue for the active state
 38. Trip style selector — multi-select dropdown in the trip header actions row (between dates and share); options: First Time, Classic, Alternative, Adventure, Relaxed, Cultural, Culinary, Family, **Historic** (9 total); saved to `Trip.tripStyle String[]` via `updateTripStyle` action; button always shows "Trip style" (selected styles displayed in stats row instead); affects suggestion categories (`STYLE_CATEGORIES` map in TripDetail.tsx); `Historic` categories: `historic_site, monument, castle, archaeological_site, landmark`; "Suggest first location" available even on empty days (geocodes trip destination); dropdown stays open until manually toggled closed
 39. Days jump calendar — `CalendarDays` icon button next to the "Days" heading; opens a calendar showing colored dots (matching each day's map color) only on dates that have an assigned day; all other dates are disabled; clicking a dated cell opens that day in the list; closes on outside click
+40. Meal/accommodation stop types — `stopType` field on LocationPoint cycles place→meal→accommodation; meal shown inline (amber), accommodation shown as "Staying at" card at day bottom; "Suggest meal" button with persistent cache
+41. Stable day colors — color index hashed from `day.id` so color follows the day when reordering (not position-based); `dayColorIndex()` in `lib/utils.ts`
+42. Server-side API proxies — all Mapbox + Overpass calls go through `/api/mapbox/*` and `/api/overpass/stop` so tokens are never in client bundle; Overpass route has 1h cache + client-side in-flight dedup
 
 ## Code Style
 - Function declarations only (`function foo()` not `const foo = () =>`)
